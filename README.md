@@ -1,2 +1,2 @@
 # Cascaide
-Cascaide: Cascaded Generative Modeling with Diffusion.
+Cascaide: Cascaded Generative Modeling with Diffusion
