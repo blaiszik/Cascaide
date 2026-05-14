@@ -1,0 +1,124 @@
+experiment:
+  name: "ddpm_aux_projection_baseline"
+  output_dir: "./runs"
+  seed: 42
+  device: "cuda"   # or "cpu"
+
+# ----- Data -----
+data:
+  data_root: "cascaide/dataset/defect_files_20260218/defect_files_20260218"
+  max_samples: null               # null = use all
+  val_fraction: 0.1
+  energy_norm_factor: 100000.0
+  num_workers: 0
+  batch_size: 16
+  split_strategy: "stratified_energy"   # random | stratified_energy
+  n_energy_bins: 5                       # ignored if split_strategy=random
+
+# Encoder
+
+encoder:
+  name: "Base"              # one of: Base, Hilbert4Ch, Hilbert3Ch
+
+  Base:
+    image_size: 24
+    norm_factor: 200.0
+    coord_range: 0.9
+    empty_tol: 0.3
+
+  Hilbert4Ch:
+    image_size: 32
+    norm_factor: 390.0
+    coord_range: 0.9
+    p: 12
+    empty_tol: 0.5
+
+  Hilbert3Ch:
+    image_size: 32
+    norm_factor: 390.0
+    coord_range: 0.9
+    p: 12
+    EPS: 0.001
+
+# Conditioner
+conditioner:
+  name: "energy_channel"            # none | energy_channel | energy_vector
+  embed_dim: 256                   # only used by energy_vector
+
+# Model (UNet)
+model:
+  base_channels: 128
+  channel_mults: [1, 2, 4, 8]       # CAREFUL: [1,2,4] for Base
+  num_res_blocks: 3
+  attn_levels: [2, 3]            # level indices, NOT spatial sizes: [1,2] for Base
+  time_embed_dim: 256
+  dropout: 0.2
+
+# Diffusion
+diffusion:
+  T: 1000
+  schedule: "cosine"              # linear | cosine | sigmoid
+  parameterization: "eps"           # eps | x0 | v
+
+# Loss
+loss:
+  defect_weight: 5.0
+  aux_losses:
+    occupancy:
+      enabled: false
+      weight: 0.5
+      sharpness: 10.0
+    count:
+      enabled: false
+      weight: 0.1
+      separate_classes: true
+    classification:
+      enabled: false
+      weight: 0.3
+    projection:
+      enabled: true
+      weight: 0.1
+      apply_every: 1
+      projection_size: 128
+      sigma: 0.5
+      start_epoch: 20            # don't fire for first 20 epochs
+      t_threshold_frac: 0.25     # only fire for t < 0.25 * T (low noise)
+# Optimizer
+optimizer:
+  type: "adamw"
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+
+# LR Schedule
+scheduler:
+  type: "cosine"                  # cosine | none
+  warmup_steps: 0
+  min_lr: 1.0e-6
+
+# EMA
+ema:
+  enabled: false
+  decay: 0.9999
+
+# Training
+training:
+  num_epochs: 200
+  grad_clip: 1.0
+  log_every: 50                   # steps
+  val_every: 1                    # epochs
+  ckpt_every: 10                  # epochs
+  resume_from: null               # path to checkpoint to resume
+
+  best_metric: "val_total"      # which key from validate() to track
+  best_mode: "min"              # min for losses, max for accuracy
+  save_best: true
+
+# Sampling (during validation)
+sampling:
+  enabled: true
+  every: 25                      # epochs
+  n_samples: 1
+  sampler: "ddpm"                 # ddpm | ddim
+  ddim_steps: 50
+  ddim_eta: 0.0
