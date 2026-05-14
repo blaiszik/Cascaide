@@ -51,6 +51,7 @@ class DiffusionLoss(nn.Module):
         if self.aux_losses:
             x0_pred, _ = self.diffusion.model_output_to_x0_and_eps(
                 model_out, xt, t)
+            x0_pred = x0_pred.clamp(-1.0, 1.0)
             for aux_fn in self.aux_losses:
                 aux_val, aux_name = aux_fn(
                     x0=x0, x0_pred=x0_pred, xt=xt, t=t,

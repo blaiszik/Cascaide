@@ -51,8 +51,9 @@ class BaseImageEncoder(CoordinateEncoder):
         return torch.from_numpy(image)
 
     def decode(self, image_tensor):
+
         if isinstance(image_tensor, torch.Tensor):
-            img = image_tensor.numpy()
+            img = image_tensor.detach().cpu().numpy()
         else:
             img = image_tensor
 
@@ -62,34 +63,46 @@ class BaseImageEncoder(CoordinateEncoder):
         vac_list = []
         sia_list = []
 
-        for i in range(max_per_type):
-            row, col = i // W, i % W
+        outer = self.coord_range + 0.15
+
+        near_bg_dev = 0.3
+
+
+        for linear_idx in range(max_per_type):
+            row = linear_idx // W
+            col = linear_idx % W
             pixel = img[:, row, col]
-            if not np.allclose(pixel, 1.0):
-                vac_list.append(pixel)
+
+            if np.all(np.abs(pixel) <= outer):
+                if np.any(np.abs(pixel - 1.0) > near_bg_dev):
+                    vac_list.append(pixel)
+            else:
+                break  
+
+        for i in range(max_per_type):
+            linear_idx = H * W - 1 - i
+            row = linear_idx // W
+            col = linear_idx % W
+            pixel = img[:, row, col]
+
+            if np.all(np.abs(pixel) <= outer):
+                if np.any(np.abs(pixel - 1.0) > near_bg_dev):
+                    sia_list.append(pixel)
             else:
                 break
 
-        for i in range(max_per_type):
-            idx = H * W - 1 - i
-            row, col = idx // W, idx % W
-            pixel = img[:, row, col]
-            if not np.allclose(pixel, 1.0):
-                sia_list.append(pixel)
-            else:
-                break
-
-
-        vac_coords = np.array(vac_list) if vac_list else np.zeros((0, 3))
-        sia_coords = np.array(sia_list) if sia_list else np.zeros((0, 3))
+        vac_coords = np.array(vac_list, dtype=np.float32) if vac_list \
+            else np.zeros((0, 3), dtype=np.float32)
+        sia_coords = np.array(sia_list, dtype=np.float32) if sia_list \
+            else np.zeros((0, 3), dtype=np.float32)
 
         if len(vac_coords) > 0:
-            vac_coords = (vac_coords * self.norm_factor) + self.centroid
+            vac_coords = vac_coords * self.norm_factor + self.centroid
         if len(sia_coords) > 0:
-            sia_coords = (sia_coords * self.norm_factor) + self.centroid
+            sia_coords = sia_coords * self.norm_factor + self.centroid
 
-        return torch.from_numpy(vac_coords.astype(np.float32)), \
-            torch.from_numpy(sia_coords.astype(np.float32))
+        return (torch.from_numpy(vac_coords.astype(np.float32)),
+                torch.from_numpy(sia_coords.astype(np.float32)))
 
     def differentiable_decode(self, images: torch.Tensor):
         B, C, H, W = images.shape
