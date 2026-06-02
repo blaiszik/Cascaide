@@ -191,6 +191,20 @@ class MultiAxisProjectionAuxLoss(AuxLoss):
         return self.projector(v_c, s_c)
 
     def _project_target(self, vac_raw, sia_raw, encoder, device):
+        # Tanh-aware encoders (e.g. TanhP99) expose normalize_for_projection so
+        # predicted and target projections share one tanh grid space. Linear
+        # encoders (Base/Hilbert) fall back to (coord - centroid) / scale.
+        if hasattr(encoder, "normalize_for_projection"):
+            if len(vac_raw) > 0:
+                v = encoder.normalize_for_projection(vac_raw, device)
+            else:
+                v = torch.zeros(1, 3, device=device)
+            if len(sia_raw) > 0:
+                s = encoder.normalize_for_projection(sia_raw, device)
+            else:
+                s = torch.zeros(1, 3, device=device)
+            return self.projector(v, s)
+
         scale = encoder.norm_factor * encoder.coord_range
         centroid = torch.as_tensor(encoder.centroid, device=device,
                                     dtype=torch.float32)

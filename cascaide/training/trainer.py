@@ -55,7 +55,7 @@ def stratified_energy_split(encoded_dataset,
 
     return Subset(encoded_dataset, train_idx), Subset(encoded_dataset, val_idx)
 
-def build_encoder(cfg, centroid):
+def build_encoder(cfg, centroid, dataset=None):
     name = cfg.encoder.name
     params = getattr(cfg.encoder, name).__dict__.copy()
     if name == "Base":
@@ -67,6 +67,15 @@ def build_encoder(cfg, centroid):
     if name == "Hilbert3Ch":
         from cascaide.encoding.hilbert3ch_image import Hilbert3ChEncoder
         return Hilbert3ChEncoder(centroid=centroid, **params)
+    if name == "TanhP99":
+        from cascaide.encoding.tanh_image import TanhImageEncoder
+        percentile = params.pop("tanh_percentile", 99.0)
+        if dataset is None:
+            raise ValueError("TanhP99 encoder needs the raw dataset to compute "
+                             "per-axis tanh_center/tanh_scale.")
+        c, s = dataset.compute_tanh_params(percentile=percentile)
+        return TanhImageEncoder(centroid=centroid,
+                                tanh_center=c, tanh_scale=s, **params)
     raise ValueError(f"Unknown encoder: {name}")
 
 
@@ -184,7 +193,7 @@ class Trainer:
         # ----- Data -----
         raw_ds = CascadeDataset(data_root=cfg.data.data_root,
                                  max_samples=cfg.data.max_samples)
-        self.encoder = build_encoder(cfg, raw_ds.global_centroid)
+        self.encoder = build_encoder(cfg, raw_ds.global_centroid, dataset=raw_ds)
         encoded = EncodedCascadeDataset(
             raw_ds, {self.encoder.name: self.encoder},
             energy_norm_factor=cfg.data.energy_norm_factor)

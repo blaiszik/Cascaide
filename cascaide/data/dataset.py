@@ -123,6 +123,38 @@ class CascadeDataset(Dataset):
         # Return a value slightly larger than the max to avoid edge clipping
         return float(np.ceil(max_dist * 1.1 / 10) * 10)
 
+    def compute_tanh_params(self, percentile: float = 99.0):
+        """Per-axis tanhP99 params on the GLOBALLY-CENTERED cloud:
+            c = per-axis median of (coord - G)         (robust center)
+            s = per-axis ``percentile`` of |centered - c|  (robust scale)
+        Returns (c, s) as float32 (3,) arrays. Mirrors the monolith's
+        _compute_tanh_params (computed on centered coords; G handled separately
+        by the encoder's ``centroid``)."""
+        if self.global_centroid is None:
+            self._compute_global_centroid()
+        G = np.asarray(self.global_centroid, dtype=np.float32)
+
+        print(f"Computing tanhP{percentile:g} params (centered cloud)...")
+        chunks = []
+        for vac_file, sia_file, _ in self.samples:
+            vac = self._load_coordinates(vac_file)
+            sia = self._load_coordinates(sia_file)
+            if len(vac) > 0:
+                chunks.append(vac - G)
+            if len(sia) > 0:
+                chunks.append(sia - G)
+
+        if not chunks:
+            return (np.zeros(3, dtype=np.float32), np.ones(3, dtype=np.float32))
+
+        allc = np.vstack(chunks).astype(np.float32)
+        c = np.median(allc, axis=0).astype(np.float32)
+        s = np.percentile(np.abs(allc - c), percentile, axis=0).astype(np.float32)
+        s = np.where(np.abs(s) < 1e-8, 1.0, s).astype(np.float32)
+        print(f"  tanh_center (median) = {c.round(3)}")
+        print(f"  tanh_scale  (p{percentile:g} of |x-c|) = {s.round(3)}")
+        return c, s
+
     def __len__(self):
         return len(self.samples)
 

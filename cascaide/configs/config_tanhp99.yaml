@@ -1,0 +1,110 @@
+experiment:
+  name: "tanhp99_global_v1"
+  output_dir: "./runs"
+  seed: 42
+  device: "cuda"
+
+# ----- Data -----
+data:
+  data_root: "cascaide/dataset/defect_files_20260218/defect_files_20260218"
+  max_samples: null
+  val_fraction: 0.1
+  # Monolith conditions on energy_keV / 300. Repo divides raw pka_energy_eV by
+  # this factor, so eV / 300000 == keV / 300. Keep this to match conditioning.
+  energy_norm_factor: 300000.0
+  num_workers: 2
+  batch_size: 16
+  split_strategy: "random"          # monolith used random_split(seed=42)
+  n_energy_bins: 5                  # ignored for random split
+
+# ----- Encoder: per-axis tanhP99 + global centering -----
+encoder:
+  name: "TanhP99"
+  TanhP99:
+    image_size: 64
+    coord_range: 0.9
+    tanh_percentile: 99.0           # consumed by dataset.compute_tanh_params
+    empty_tol: 0.2                  # matches monolith's |x0 - 1| < 0.2 defect mask
+
+# ----- Conditioner: energy broadcast to 3 channels (UNet in=6) -----
+conditioner:
+  name: "energy_channel"
+  embed_dim: 256
+
+# ----- Model (UNet) -----
+model:
+  base_channels: 128
+  channel_mults: [1, 2, 4, 8]       # 3 downsamples; 64 / 2^3 = 8 (divisible)
+  num_res_blocks: 3
+  attn_levels: [2, 3]               # == monolith attention_levels
+  time_embed_dim: 256
+  dropout: 0.2
+
+# ----- Diffusion -----
+diffusion:
+  T: 1000
+  schedule: "cosine"
+  parameterization: "eps"
+
+# ----- Loss -----
+loss:
+  defect_weight: 5.0
+  aux_losses:
+    occupancy:
+      enabled: false                # not in the monolith
+      weight: 0.5
+      sharpness: 10.0
+    count:
+      enabled: false                # not in the monolith
+      weight: 0.1
+      separate_classes: true
+    classification:
+      enabled: false                # not in the monolith
+      weight: 0.3
+    projection:
+      enabled: true
+      weight: 0.1                    # aux_loss_weight; set 0.0 for clean baseline
+      apply_every: 1
+      projection_size: 128
+      sigma: 0.5
+      start_epoch: 450               # aux_loss_start_epoch
+      t_threshold_frac: 0.25         # aux_loss_t_threshold
+
+# ----- Optimizer -----
+optimizer:
+  type: "adamw"
+  lr: 1.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+
+# ----- LR Schedule (CosineAnnealingLR, no warmup, eta_min 1e-6) -----
+scheduler:
+  type: "cosine"
+  warmup_steps: 0
+  min_lr: 1.0e-6
+
+# ----- EMA (monolith used none) -----
+ema:
+  enabled: false
+  decay: 0.9999
+
+# ----- Training -----
+training:
+  num_epochs: 600
+  grad_clip: 1.0
+  log_every: 50
+  val_every: 1
+  ckpt_every: 50
+  resume_from: null
+  best_metric: "val_total"
+  best_mode: "min"
+  save_best: true
+
+# ----- Sampling -----
+sampling:
+  enabled: true
+  every: 25
+  n_samples: 5
+  sampler: "ddpm"
+  ddim_steps: 50
+  ddim_eta: 0.0
