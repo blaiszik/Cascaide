@@ -45,6 +45,7 @@ python sp_cas.py
 - `research-directions.md` — benchmarks, normalization, architectures, autoresearch paths.
 - `journal.md` — dated build log of the model-progress tooling (start here for 2026-06-02).
 - `polaris.md` — **ALCF Polaris handoff** (deploy/polaris kit, resume steps, gotchas). Active 2026-06-03.
+- `experiments.md` — **Polaris experiment registry**: exact re-runnable sweep defs (Exp 1 scheduler / Exp 2 / preemptable full-range) + preemption-recovery steps. Active 2026-06-03.
 - `runbook.md` — env setup (the `cascaide` mamba env w/ ovito), data gotchas, real-data facts.
 - `log.md` — running session notes (append-only).
 
