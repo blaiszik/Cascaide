@@ -4,10 +4,11 @@
 #
 #   QUEUE=preemptable WALLTIME=08:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments_preempt.txt
 #
-# PREEMPTION: preemptable jobs can be killed at any time and we do NOT auto-resume. But
-# best_by_scorecard.pt is written to Eagle every time the score improves (per select_every),
-# so a preemption loses only post-last-improvement training + the final finalize/report — the
-# best checkpoint survives. Recover: globus.sh pull-ckpts then score locally.
+# PREEMPTION: preemptable jobs can be killed any time and we do NOT auto-resume. --ckpt_every 100
+# writes a rolling CONVERGED latest.pt to Eagle every 100 epochs (atomic), so a preempt loses at
+# most ~100 epochs and ALWAYS leaves a converged checkpoint to rescore offline — do NOT rely on
+# best_by_scorecard.pt (noisy n=6 selection; see job 7183204: bests locked at ep 59/89/329/119
+# despite training to ~ep560). Recover/verdict: globus.sh pull-ckpts -> rescore latest.pt locally.
 # MEMORY: full range has up to ~1100-defect clouds (O(N^2) attn). --max_defects 1000 (drops 1)
 # + batch<=16 is safe on a 40 GB A100; the 512/10 cell drops to batch 8 for headroom.
 # WALLTIME: watch ep-1 s/ep in cascaide-sweep.o<jobid>; the 512/10 cell is the long pole.
@@ -17,10 +18,10 @@
 # verbatim to python, so inline comments would become bad args. Describe cells ABOVE them.
 #
 # full-range per-cascade baseline (converged)
---center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800  --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --lr_sched cosine
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800  --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --ckpt_every 100 --lr_sched cosine
 # SAME but global centering -> clean per_cascade-vs-global (vignesh) comparison
---center global      --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800  --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --lr_sched cosine
+--center global      --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800  --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --ckpt_every 100 --lr_sched cosine
 # larger arch, fully converged (un-trimmed; busts the 1h debug-scaling cap)
---center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 8  --epochs 800  --d_model 512 --depth 10 --select_every 40 --select_n 6 --finalize_n 16 --lr_sched cosine
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 8  --epochs 800  --d_model 512 --depth 10 --select_every 40 --select_n 6 --finalize_n 16 --ckpt_every 100 --lr_sched cosine
 # epochs ceiling on the full range
---center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 1500 --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --lr_sched cosine
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 1500 --d_model 256 --depth 6  --select_every 40 --select_n 6 --finalize_n 16 --ckpt_every 100 --lr_sched cosine
