@@ -22,6 +22,10 @@ import matplotlib.pyplot as plt
 REAL_C, GEN_C = "#111827", "#2563eb"
 
 
+def _esc(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _b64(path):
     with open(path, "rb") as f:
         return "data:image/png;base64," + base64.b64encode(f.read()).decode()
@@ -112,15 +116,20 @@ def build_report(results_dir, out_html=None):
     runs.sort(key=lambda x: x[1].get("score", 9e9))
 
     cards = ""
-    for manifest, sc, imgs in runs:
+    toc_items = ""
+    for i, (manifest, sc, imgs) in enumerate(runs):
         passed = sc["n_requirements_passed"]; total = sc["n_requirements"]
         sccol = "#16a34a" if sc["score"] <= 0.6 else "#d97706" if sc["score"] <= 1.1 else "#dc2626"
+        label = _esc(manifest.get("label", "?"))
+        toc_items += (f'<li><a href="#run-{i}"><span class=tdot style="background:{sccol}"></span>'
+                      f'<span class=tlabel>{label}</span>'
+                      f'<span class=tscore style="color:{sccol}">{sc["score"]:.3f}</span></a></li>')
         img_html = "".join(f"<img src='{d}' class=cmp>" for d in imgs) or \
             "<div class=note>No generated-vs-real images for this run " \
             "(baselines have none; checkpoint runs render them).</div>"
         cards += f"""
-        <section class=card>
-          <h2>{manifest.get('label','?')}
+        <section class=card id=run-{i}>
+          <h2>{label}
             <span class=score style="background:{sccol}1a;color:{sccol}">score {sc['score']:.3f}</span>
             <span class=meta>{manifest.get('model',{}).get('architecture','?')} ·
               {passed}/{total} requirements · {manifest.get('created','')[:19].replace('T',' ')}
@@ -136,13 +145,32 @@ def build_report(results_dir, out_html=None):
         </section>"""
 
     best = runs[0][1]["score"] if runs else None
+    best_str = f"{best:.3f}" if best is not None else "—"
+    if runs:
+        body_html = (f'<div class=wrap>'
+                     f'<nav class=toc><div class=toc-h>Runs · best→worst</div><ol>{toc_items}</ol></nav>'
+                     f'<main>{cards}</main></div>')
+    else:
+        body_html = '<main class=solo><div class=card>No runs yet. Run scripts/run_benchmark.py.</div></main>'
     html = f"""<!doctype html><html><head><meta charset=utf-8>
 <title>Cascaide — Results Report</title><style>
  body{{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f8fc;color:#0f172a}}
  header{{padding:18px 26px;background:#0f1830;color:#fff}}
  header h1{{margin:0;font-size:18px}} header .s{{color:#9fb3d8;font-size:13px}}
- main{{max-width:1180px;margin:0 auto;padding:22px}}
- .card{{background:#fff;border:1px solid #e3e8f0;border-radius:14px;padding:18px 20px;margin-bottom:22px;box-shadow:0 1px 3px #0f172a0d}}
+ html{{scroll-behavior:smooth}}
+ .wrap{{max-width:1180px;margin:0 auto;padding:22px;display:grid;grid-template-columns:252px minmax(0,1fr);gap:22px;align-items:start}}
+ main{{min-width:0}} main.solo{{max-width:1180px;margin:0 auto;padding:22px}}
+ .toc{{position:sticky;top:18px;align-self:start;max-height:calc(100vh - 38px);overflow:auto;background:#fff;border:1px solid #e3e8f0;border-radius:12px;padding:12px}}
+ .toc .toc-h{{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#64748b;margin:0 4px 8px}}
+ .toc ol{{list-style:none;margin:0;padding:0}}
+ .toc li{{margin:1px 0}}
+ .toc a{{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;color:#0f172a;text-decoration:none;font-size:12.5px;line-height:1.3}}
+ .toc a:hover{{background:#eef2f7}}
+ .tdot{{width:8px;height:8px;border-radius:50%;flex:0 0 auto}}
+ .tlabel{{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+ .tscore{{font-weight:700;font-size:12px;flex:0 0 auto}}
+ .card{{background:#fff;border:1px solid #e3e8f0;border-radius:14px;padding:18px 20px;margin-bottom:22px;box-shadow:0 1px 3px #0f172a0d;scroll-margin-top:16px}}
+ @media(max-width:900px){{.wrap{{grid-template-columns:1fr}} .toc{{position:static;max-height:none}}}}
  h2{{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
  h3{{font-size:13px;color:#475569;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px}}
  .score{{font-size:12px;font-weight:700;border-radius:7px;padding:2px 9px}}
@@ -157,8 +185,8 @@ def build_report(results_dir, out_html=None):
  .note{{color:#94a3b8;font-size:12px;margin-top:4px}}
 </style></head><body>
 <header><h1>Cascaide — Model Progress Report</h1>
-<div class=s>{len(runs)} runs · best score {best:.3f} · sorted best→worst · generated (not encoded) vs real</div></header>
-<main>{cards or '<div class=card>No runs yet. Run scripts/run_benchmark.py.</div>'}</main>
+<div class=s>{len(runs)} runs · best score {best_str} · sorted best→worst · generated (not encoded) vs real</div></header>
+{body_html}
 </body></html>"""
     with open(out_html, "w") as f:
         f.write(html)
