@@ -23,6 +23,19 @@ def _union(s):
     return np.concatenate(parts, 0) if parts else np.zeros((0, 3), np.float32)
 
 
+def _rand_rotation(rng):
+    """A uniform random proper rotation in SO(3) (QR of a Gaussian matrix, sign-fixed).
+    Cascades have no canonical orientation, so rotating a (centered) cloud is a label-
+    preserving augmentation: it rotates vac+SIA together, so all pairwise distances and the
+    vac<->SIA geometry are preserved. Applied to PHYSICAL (pre-scale) coords so the per-axis
+    p99 scale is not entangled with orientation."""
+    q, r = np.linalg.qr(rng.standard_normal((3, 3)))
+    q *= np.sign(np.diag(r))            # resolve QR sign ambiguity -> uniform on O(3)
+    if np.linalg.det(q) < 0:            # force a proper rotation (det +1), never a reflection
+        q[:, 0] = -q[:, 0]
+    return q.astype(np.float32)
+
+
 class PerCascadeNormalizer:
     """Per-cascade centering + global per-axis p99 scale."""
 
@@ -75,18 +88,29 @@ class SetDataset(Dataset):
     compatible with sp_cas.collate_dynamic. ``count_energy``/``count_npairs`` include empty
     cascades (for the count head)."""
 
-    def __init__(self, samples, normalizer, energy_divisor=300.0):
+    def __init__(self, samples, normalizer, energy_divisor=300.0, augment_rot=False):
         self.normalizer = normalizer
+        # Optional SO(3) rotation augmentation (free data multiplication on a small, isotropic
+        # corpus; the set-DiT is not rotation-equivariant, so this adds the missing symmetry).
+        self.augment_rot = augment_rot
+        self._rng = np.random.default_rng()
+        # store PHYSICAL per-cascade-centered coords; the p99 scale is applied in __getitem__
+        # (so an optional rotation acts on physical coords, before scaling). With augment off
+        # this is numerically identical to the previous (center -> scale) path.
+        self.s_t = torch.tensor(normalizer.s, dtype=torch.float32)
         self.items = []
         e_all, n_all = [], []
         for s in samples:
-            vn, sn = normalizer.encode(s["vac"], s["sia"])
-            nv, ns = len(vn), len(sn)
+            u = _union(s)
+            c = u.mean(0) if len(u) else np.zeros(3, np.float32)
+            vc = (s["vac"] - c).astype(np.float32) if len(s["vac"]) else np.zeros((0, 3), np.float32)
+            sc = (s["sia"] - c).astype(np.float32) if len(s["sia"]) else np.zeros((0, 3), np.float32)
+            nv, ns = len(vc), len(sc)
             n_pairs = max(nv, ns)
             e_all.append(s["energy"] / energy_divisor)
             n_all.append(n_pairs)
             if nv + ns > 0:
-                coords = np.concatenate([c for c in (vn, sn) if len(c)], 0).astype(np.float32)
+                coords = np.concatenate([a for a in (vc, sc) if len(a)], 0).astype(np.float32)
                 types = np.concatenate([np.full(nv, TYPE_VAC, np.int64),
                                         np.full(ns, TYPE_SIA, np.int64)])
                 self.items.append((torch.from_numpy(coords), torch.from_numpy(types),
@@ -99,4 +123,8 @@ class SetDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, i):
-        return self.items[i]
+        coords, types, energy, n_pairs = self.items[i]   # coords = physical, centered
+        if self.augment_rot:
+            R = torch.from_numpy(_rand_rotation(self._rng))
+            coords = coords @ R                           # rotate cloud (vac+SIA together)
+        return coords / self.s_t, types, energy, n_pairs  # per-axis p99 scale

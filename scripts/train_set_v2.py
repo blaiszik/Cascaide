@@ -69,9 +69,23 @@ def main():
     ap.add_argument("--depth", type=int, default=6)
     ap.add_argument("--n_heads", type=int, default=8)
     ap.add_argument("--lr", type=float, default=2e-4)
+    ap.add_argument("--lr_sched", choices=["cosine", "cosine_warmup", "onecycle", "plateau"],
+                    default="cosine", help="LR schedule for the denoiser (count head is unscheduled)")
+    ap.add_argument("--warmup_frac", type=float, default=0.05,
+                    help="warmup as a fraction of epochs (cosine_warmup)")
+    ap.add_argument("--lr_max", type=float, default=None,
+                    help="peak LR for onecycle (default 4*lr — super-convergence wants a high peak)")
+    ap.add_argument("--plateau_factor", type=float, default=0.5, help="LR drop factor (plateau)")
+    ap.add_argument("--plateau_patience", type=int, default=3,
+                    help="plateau patience in #scorecard evals (i.e. plateau steps on the scorecard, "
+                         "the true objective, every select_every epochs)")
     ap.add_argument("--energy_divisor", type=float, default=300.0)
     # per-cascade centering (required for mixed-supercell raw_data) + energy subsetting/binning
     ap.add_argument("--center", choices=["per_cascade", "global"], default="per_cascade")
+    ap.add_argument("--augment_rot", action="store_true",
+                    help="SO(3) rotation augmentation (per_cascade only): rotate each centered "
+                         "cloud by a fresh random rotation every epoch — free data multiplication "
+                         "+ enforces orientation invariance the set-DiT lacks")
     ap.add_argument("--energy_max", type=float, default=None, help="keep cascades <= this keV")
     ap.add_argument("--max_defects", type=int, default=None,
                     help="drop cascades with max(n_vac,n_sia) > this (memory cap for O(N^2) attention)")
@@ -128,10 +142,12 @@ def main():
     if args.center == "per_cascade":
         from cascaide.setdiff.data import PerCascadeNormalizer, SetDataset
         norm = PerCascadeNormalizer().fit(samples)
-        ds = SetDataset(samples, norm, args.energy_divisor)
+        ds = SetDataset(samples, norm, args.energy_divisor, augment_rot=args.augment_rot)
         print(f"[v2] {len(ds)} cascades (<= {args.energy_max} keV) | device={dev} | "
-              f"center=per_cascade | s={norm.s.round(1)}")
+              f"center=per_cascade | s={norm.s.round(1)} | augment_rot={args.augment_rot}")
     else:
+        if args.augment_rot:
+            print("[v2] WARNING: --augment_rot is only wired for --center per_cascade; ignored.")
         raw = [(s["vac"], s["sia"]) for s in samples]
         energies = [s["energy"] for s in samples]
 
@@ -150,7 +166,25 @@ def main():
     ch = sp.CountHead().to(dev)
     diff = sp.CoordDiffusion(T=1000, schedule="cosine", device=dev)
     opt = torch.optim.AdamW(den.parameters(), lr=args.lr, weight_decay=1e-2)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs, 1e-6)
+    # LR scheduler. step cadence differs by type: onecycle steps PER BATCH, cosine/warmup PER
+    # EPOCH, plateau steps on the SCORECARD (the true objective) each time it is evaluated.
+    L = torch.optim.lr_scheduler
+    steps_per_epoch = max(1, len(tl))
+    if args.lr_sched == "cosine":
+        sched = L.CosineAnnealingLR(opt, args.epochs, 1e-6); sched_step = "epoch"
+    elif args.lr_sched == "cosine_warmup":
+        wu = max(1, round(args.warmup_frac * args.epochs))
+        sched = L.SequentialLR(opt, [L.LinearLR(opt, start_factor=0.01, total_iters=wu),
+                                     L.CosineAnnealingLR(opt, max(1, args.epochs - wu), 1e-6)],
+                               milestones=[wu]); sched_step = "epoch"
+    elif args.lr_sched == "onecycle":
+        sched = L.OneCycleLR(opt, max_lr=(args.lr_max or 4 * args.lr),
+                             epochs=args.epochs, steps_per_epoch=steps_per_epoch); sched_step = "batch"
+    else:  # plateau — adaptive on the scorecard (lower = better)
+        sched = L.ReduceLROnPlateau(opt, mode="min", factor=args.plateau_factor,
+                                    patience=args.plateau_patience); sched_step = "plateau"
+    print(f"[v2] lr_sched={args.lr_sched} (steps per {sched_step}) base_lr={args.lr}"
+          + (f" max_lr={args.lr_max or 4*args.lr}" if args.lr_sched == "onecycle" else ""))
     opt_c = torch.optim.Adam(ch.parameters(), lr=1e-3)
     ce = ds.count_energy.to(dev); cn = ds.count_npairs.to(dev)
 
@@ -208,10 +242,13 @@ def main():
                 continue
             opt.zero_grad(set_to_none=True); loss.backward()
             torch.nn.utils.clip_grad_norm_(den.parameters(), 1.0); opt.step()
+            if sched_step == "batch":      # onecycle anneals per optimizer step
+                sched.step()
             if ema is not None:
                 ema.update(den)
             eps_l.append(float(token_mse.detach()))   # log raw token MSE (comparable across runs)
-        sched.step()
+        if sched_step == "epoch":
+            sched.step()
 
         # count head
         ch.train()
@@ -244,10 +281,13 @@ def main():
                         c = norm.inverse(c)
                         gen.append({"vac": c[:npi], "sia": c[npi:], "energy": float(e_keV)})
             score, _ = score_generated(gen, ref, label=f"ep{epoch+1}", energy_bin=args.energy_bin)
+            if sched_step == "plateau":    # adaptive: drop LR when the scorecard stops improving
+                sched.step(score)
             flag = ""
             if score < best_score:
                 best_score = score; save(best_path, epoch); flag = " *best*"
             msg += f" | scorecard {score:.3f}{flag}"
+        msg += f" | lr {opt.param_groups[0]['lr']:.2e}"
         print(msg, flush=True)
 
     save(os.path.join(args.output_dir, "final_model.pt"), args.epochs - 1)
@@ -272,9 +312,12 @@ def main():
         import shutil
         emax = f", <{int(args.energy_max)}keV" if args.energy_max else ""
         desc = (f"set-dit v2 [{'EMA' if ema is not None else 'noEMA'}"
-                f"{', minSNR' if args.min_snr else ''}, {args.center}, {args.epochs}ep{emax}]")
-        tags = ["set-dit-v2", args.center] + (["ema"] if ema is not None else []) \
+                f"{', minSNR' if args.min_snr else ''}{', rot-aug' if args.augment_rot else ''}"
+                f", {args.lr_sched}, {args.center}, {args.epochs}ep{emax}]")
+        tags = ["set-dit-v2", args.center, f"sched:{args.lr_sched}"] \
+            + (["ema"] if ema is not None else []) \
             + (["min-snr"] if args.min_snr else []) \
+            + (["augment-rot"] if args.augment_rot else []) \
             + (["substructure-loss"] if args.w_struct > 0 else [])
         sc = scm.compute(gen, ref, label=desc, energy_bin=args.energy_bin)
         manifest = registry.build_manifest(
@@ -284,7 +327,8 @@ def main():
             config={"w_struct": args.w_struct, "epochs": args.epochs,
                     "d_model": args.d_model, "depth": args.depth, "center": args.center,
                     "energy_max": args.energy_max, "energy_bin": args.energy_bin,
-                    "ema": ema is not None, "min_snr": args.min_snr},
+                    "ema": ema is not None, "min_snr": args.min_snr,
+                    "lr_sched": args.lr_sched, "lr": args.lr, "augment_rot": args.augment_rot},
             tags=tags)
         run_dir = registry.write_run(args.results, manifest, scorecard=sc)
         # co-locate the trained weights INSIDE the run dir so the run is self-contained

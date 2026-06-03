@@ -6,6 +6,8 @@ data/*.npz
 results/
 runs/
 checkpoints_pairs/
+# model checkpoints dropped at repo root (e.g. vignesh_model.pt)
+/*.pt
 
 # Python
 __pycache__/

@@ -1,10 +1,30 @@
 # Sweep experiment list — ONE experiment per line = extra args to scripts/train_set_v2.py.
 # (--subset, --results, --output_dir, --device, --no_report are added automatically.)
 # Blank lines and #-comments are ignored. Request enough nodes so 4*nodes >= #experiments.
-# Design any experiment matrix here, then: ./deploy/polaris/submit.sh sweep deploy/polaris/experiments.txt
+# Submit: ./deploy/polaris/submit.sh sweep deploy/polaris/experiments.txt   (4 exps -> 1 node)
 #
-# Example: scaling (model size) x energy range, on the full continuous dataset.
---center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 256 --depth 6
---center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 384 --depth 8
---center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 512 --depth 10
---center per_cascade --epochs 400 --energy_max 100 --energy_bin 10 --d_model 256 --depth 6
+# ===========================================================================================
+# EXPERIMENT 1 — LR-scheduler sweep (the postdoc's question: which schedule is best?)
+# 4 GPUs = 4 schedulers, everything else held fixed at a CONVERGED baseline so the comparison
+# is clean (256/6, <100 keV, per-cascade, EMA, 600 ep ~= 25 min at 2.5 s/ep -> fits 1 h).
+# Judge by scorecard; rescore the 4 best_by_scorecard.pt at high n locally for the verdict.
+# QUEUE=debug-scaling WALLTIME=01:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments.txt
+# ===========================================================================================
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600 --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched cosine
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600 --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched cosine_warmup --warmup_frac 0.05
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600 --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched onecycle --lr_max 8e-4
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600 --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched plateau --plateau_patience 3 --plateau_factor 0.5
+
+# ===========================================================================================
+# EXPERIMENT 2 — aug vs arch vs more-epochs (run AFTER Exp 1; swap in the winning --lr_sched).
+# Replace WIN below with the Exp-1 winner, uncomment, and comment out Experiment 1 above.
+# ===========================================================================================
+# --center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600  --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched WIN                 # control
+# --center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 600  --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched WIN --augment_rot   # + SO(3) augmentation
+# --center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 450  --d_model 384 --depth 8 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched WIN                 # larger arch (epochs trimmed to fit 1h)
+# --center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --epochs 1200 --d_model 256 --depth 6 --select_every 30 --select_n 6 --finalize_n 16 --lr_sched WIN                 # epochs ceiling
+#
+# Original scaling-sweep example (full 0-300 keV), kept for reference:
+# --center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 256 --depth 6
+# --center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 384 --depth 8
+# --center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 512 --depth 10
