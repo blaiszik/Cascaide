@@ -11,12 +11,15 @@ export WALLTIME="${WALLTIME:-01:00:00}"          # HH:MM:SS (debug/debug-scaling
 export FILESYSTEMS="${FILESYSTEMS:-home:eagle}"  # -l filesystems
 
 # --- paths (EAGLE_BASE is the single source of truth: the POSIX path as seen on Polaris) ---
+# NOTE: paths use DIRECT assignment (not ${VAR:-default}) so re-sourcing always reflects this
+# file — a stale value exported by a previous `source` must never win. Change the subdir by
+# editing EAGLE_BASE below.
 export REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"     # auto-detected repo root
-export EAGLE_BASE="${EAGLE_BASE:-/lus/eagle/projects/${PROJECT}/models}"       # Eagle project space (Lustre)
-export ENV_PREFIX="${ENV_PREFIX:-${EAGLE_BASE}/envs/cascaide}"  # venv on Eagle
-export DATA="${DATA:-${EAGLE_BASE}/data/cascaide_cascades.npz}" # processed dataset (npz)
-export RESULTS="${RESULTS:-${EAGLE_BASE}/results}"             # results store (run dirs, scorecards)
-export RUNS_DIR="${RUNS_DIR:-${EAGLE_BASE}/runs}"             # checkpoints / training output
+export EAGLE_BASE="/lus/eagle/projects/${PROJECT}/models"       # Eagle project space (Lustre)
+export ENV_PREFIX="${EAGLE_BASE}/envs/cascaide"  # venv on Eagle
+export DATA="${EAGLE_BASE}/data/cascaide_cascades.npz"          # processed dataset (npz)
+export RESULTS="${EAGLE_BASE}/results"           # results store (run dirs, scorecards)
+export RUNS_DIR="${EAGLE_BASE}/runs"             # checkpoints / training output
 
 # --- Globus (only used by globus.sh on your LAPTOP; Polaris reads Eagle directly) ---
 # Find UUIDs: globus endpoint search "ALCF Eagle"  ;  globus endpoint local-id
@@ -25,5 +28,5 @@ export LOCAL_ENDPOINT="${LOCAL_ENDPOINT:-7b4d7fd6-5f5b-11f1-9808-0e9d40238285}" 
 # Globus collection root (verify: globus ls $EAGLE_ENDPOINT:/ — ALCF Eagle is usually /lus/eagle/projects).
 export EAGLE_COLLECTION_ROOT="${EAGLE_COLLECTION_ROOT:-/lus/eagle/projects}"
 # Collection-relative path is DERIVED from EAGLE_BASE so Globus writes EXACTLY where Polaris reads
-# (e.g. /lus/eagle/projects/Cascaide/models -> /Cascaide/models). No drift.
-export EAGLE_PATH="${EAGLE_PATH:-${EAGLE_BASE#$EAGLE_COLLECTION_ROOT}}"
+# (e.g. /lus/eagle/projects/Cascaide/models -> /Cascaide/models). Direct assignment (no drift).
+export EAGLE_PATH="${EAGLE_BASE#$EAGLE_COLLECTION_ROOT}"
