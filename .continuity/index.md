@@ -44,6 +44,7 @@ python sp_cas.py
 - `decisions.md` — cross-cutting decisions and why.
 - `research-directions.md` — benchmarks, normalization, architectures, autoresearch paths.
 - `journal.md` — dated build log of the model-progress tooling (start here for 2026-06-02).
+- `polaris.md` — **ALCF Polaris handoff** (deploy/polaris kit, resume steps, gotchas). Active 2026-06-03.
 - `runbook.md` — env setup (the `cascaide` mamba env w/ ovito), data gotchas, real-data facts.
 - `log.md` — running session notes (append-only).
 
