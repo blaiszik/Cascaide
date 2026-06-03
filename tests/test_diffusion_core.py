@@ -9,9 +9,11 @@ class DummyModel(torch.nn.Module):
     def forward(self, x, t, cond=None):
         return torch.zeros_like(x)
 
-def get_input(batch_size=2, shape=(3, 16, 16)):
+def get_input(batch_size=2, shape=(3, 16, 16), t_max=50):
+    # t must be < T (the diffusion these tests build uses T=50); sampling t >= T overflows
+    # the schedule-buffer gather.
     x0 = torch.randn(batch_size, *shape)
-    t = torch.randint(0, 100, (batch_size,))
+    t = torch.randint(0, t_max, (batch_size,))
     return x0, t
 
 
@@ -87,7 +89,10 @@ def test_posterior():
     mean, logvar = diff.q_posterior(x0, xt, t)
 
     assert mean.shape == x0.shape
-    assert logvar.shape == x0.shape
+    # posterior log-variance depends only on t, so it is returned broadcast-shaped
+    # (B,1,1,1) and must broadcast against x0 (the sampler relies on this).
+    assert logvar.shape[0] == x0.shape[0]
+    assert (logvar + torch.zeros_like(x0)).shape == x0.shape
     assert torch.isfinite(mean).all()
     assert torch.isfinite(logvar).all()
 

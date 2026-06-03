@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .base import NoiseSchedule
+from .schedules import CosineSchedule  # default schedule when none is passed
 
 class GaussianDiffusion(nn.Module):
     PARAM_TYPES = ('eps', 'x0', 'v')

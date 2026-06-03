@@ -106,7 +106,8 @@ def build_conditioner(cfg, encoder):
 def build_loss(cfg, diffusion, encoder):
     from cascaide.diffusion.loss import (DiffusionLoss, OccupancyBCELoss,
                                            CountLoss, ClassificationLoss,
-                                           MultiAxisProjectionAuxLoss)
+                                           MultiAxisProjectionAuxLoss,
+                                           RadialDensityAuxLoss)
     aux = []
     a = cfg.loss.aux_losses
 
@@ -126,6 +127,20 @@ def build_loss(cfg, diffusion, encoder):
             sigma=a.projection.sigma,
             start_epoch=getattr(a.projection, "start_epoch", 0),
             t_threshold_frac=getattr(a.projection, "t_threshold_frac", 1.0),
+            diffusion_T=cfg.diffusion.T,
+        ))
+
+    radial = getattr(a, "radial", None)
+    if radial is not None and getattr(radial, "enabled", False):
+        aux.append(RadialDensityAuxLoss(
+            weight=radial.weight,
+            apply_every=getattr(radial, "apply_every", 1),
+            nbins=getattr(radial, "nbins", 16),
+            rmax=getattr(radial, "rmax", 1.5),
+            sigma=getattr(radial, "sigma", 0.08),
+            per_class=getattr(radial, "per_class", True),
+            start_epoch=getattr(radial, "start_epoch", 0),
+            t_threshold_frac=getattr(radial, "t_threshold_frac", 0.25),
             diffusion_T=cfg.diffusion.T,
         ))
 

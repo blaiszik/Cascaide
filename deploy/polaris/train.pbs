@@ -1,0 +1,37 @@
+#!/bin/bash -l
+# Single-experiment training on ONE A100 (debug / preemptable queue).
+# Submit via the wrapper (recommended, fills -A/-q/-l from config.sh):
+#     ./deploy/polaris/submit.sh train EXP="--epochs 300 --energy_max 100 --energy_bin 10"
+# or directly:
+#     qsub -A <project> -q debug -l select=1:system=polaris -l walltime=01:00:00 \
+#          -l filesystems=home:eagle -v EXP="--epochs 300" deploy/polaris/train.pbs
+#
+# These #PBS lines are defaults; the wrapper overrides them from config.sh.
+#PBS -N cascaide-train
+#PBS -l select=1:system=polaris
+#PBS -l place=scatter
+#PBS -l filesystems=home:eagle
+#PBS -l walltime=01:00:00
+#PBS -j oe
+set -euo pipefail
+
+# locate the repo (qsub runs from PBS_O_WORKDIR; fall back to the script's tree)
+cd "${PBS_O_WORKDIR:-$(dirname "$0")/../..}"
+source deploy/polaris/config.sh
+
+module use /soft/modulefiles
+module load conda
+conda activate "$ENV_PREFIX"
+
+mkdir -p "$RESULTS"
+EXP="${EXP:---center per_cascade --epochs 250 --energy_bin 25 --max_defects 1000}"
+echo "[train.pbs] node=$(hostname) gpus=$(nvidia-smi -L | wc -l)"
+echo "[train.pbs] EXP=$EXP"
+
+# one A100; train_set_v2 reads/writes /eagle directly
+python scripts/train_set_v2.py \
+    --subset "$DATA" --results "$RESULTS" \
+    --output_dir "$RUNS_DIR/${PBS_JOBID:-local}" \
+    --device cuda $EXP
+
+echo "[train.pbs] done -> $RESULTS (pull back with deploy/polaris/globus.sh pull)"

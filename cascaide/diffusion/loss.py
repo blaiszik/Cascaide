@@ -386,6 +386,129 @@ class CountLoss(AuxLoss):
         info["count_true_sia"] = tgt_sia.mean().item()
         return loss
 
+class RadialDensityAuxLoss(AuxLoss):
+    """Differentiable radial-density-matching loss.
+
+    Targets the known failure mode (models capture global shape but miss substructure) by
+    aligning the *radial statistics* of the generated cloud with the real one. A soft
+    (RBF-binned) radial histogram is built from the model's differentiably-decoded
+    coordinates and compared to the same histogram of the ground-truth coordinates, mapped
+    into the encoder's normalized space.
+
+    This is the eval-side ``radial_density_profile`` made differentiable. Mirrors the
+    projection aux loss's gating: only fires after ``start_epoch`` and for low-noise
+    timesteps (t < t_threshold_frac * T), where x0_pred is informative.
+
+    Histogram is normalized to a pdf, so it matches *shape* not absolute count (count is
+    handled by CountLoss). Optionally also matches per-class (vac/SIA) radial shape, which
+    helps the model separate the two populations radially.
+    """
+    name = "radial"
+
+    def __init__(self, weight: float = 1.0, apply_every: int = 1,
+                 nbins: int = 16, rmax: float = 1.5, sigma: float = 0.08,
+                 per_class: bool = True, start_epoch: int = 0,
+                 t_threshold_frac: float = 1.0, diffusion_T: int = 1000):
+        super().__init__(weight=weight, apply_every=apply_every)
+        self.nbins = nbins
+        self.rmax = rmax
+        self.sigma = sigma
+        self.per_class = per_class
+        self.start_epoch = start_epoch
+        self.t_threshold_frac = t_threshold_frac
+        self.diffusion_T = diffusion_T
+        self._current_epoch = 0
+        centers = torch.linspace(0.0, rmax, nbins)
+        self.register_buffer("centers", centers)
+
+    def set_epoch(self, epoch: int):
+        self._current_epoch = epoch
+
+    def _soft_pdf(self, coords, weights, center):
+        """Soft radial pdf via RBF binning. coords (N,3), weights (N,) or None."""
+        if coords.shape[0] == 0:
+            return torch.zeros(self.nbins, device=coords.device)
+        r = torch.linalg.norm(coords - center, dim=-1)            # (N,)
+        d = r[:, None] - self.centers[None, :].to(coords.device)  # (N, B)
+        k = torch.exp(-(d ** 2) / (2 * self.sigma ** 2))          # (N, B)
+        if weights is not None:
+            k = k * weights[:, None]
+        h = k.sum(0)                                              # (B,)
+        return h / (h.sum() + 1e-8)
+
+    def _weighted_center(self, coords, weights):
+        if coords.shape[0] == 0:
+            return torch.zeros(3, device=coords.device)
+        w = weights[:, None] if weights is not None else torch.ones_like(coords[:, :1])
+        return (coords * w).sum(0) / (w.sum() + 1e-8)
+
+    def _norm_target(self, coords_raw, encoder, device):
+        """Map raw (absolute) coords into the encoder's normalized [-1,1] space — the same
+        space differentiable_decode produces. Shares logic with the projection loss."""
+        if coords_raw is None or len(coords_raw) == 0:
+            return torch.zeros(0, 3, device=device)
+        if hasattr(encoder, "normalize_for_projection"):
+            return encoder.normalize_for_projection(coords_raw, device)
+        scale = encoder.norm_factor * encoder.coord_range
+        centroid = torch.as_tensor(encoder.centroid, device=device, dtype=torch.float32)
+        return ((coords_raw.to(device) - centroid) / scale).clamp(-1.0, 1.0)
+
+    def compute(self, x0, x0_pred, xt, t, batch, encoder, info):
+        if self._current_epoch < self.start_epoch:
+            return None
+        if not hasattr(encoder, "differentiable_decode"):
+            return None
+        if batch is None or "vac_coords" not in batch or "sia_coords" not in batch:
+            return None
+
+        device = x0_pred.device
+        t_max = int(self.diffusion_T * self.t_threshold_frac)
+        low = t < t_max
+        if int(low.sum()) == 0:
+            return None
+        low_idx = torch.where(low)[0].tolist()
+        x0_pred_lt = x0_pred[low]
+
+        pred_vac, pred_sia, vac_w, sia_w = encoder.differentiable_decode(x0_pred_lt)
+
+        total = torch.zeros((), device=device)
+        valid = 0
+        for b, gi in enumerate(low_idx):
+            tv = batch["vac_coords"][gi]
+            ts = batch["sia_coords"][gi]
+            if len(tv) == 0 and len(ts) == 0:
+                continue
+            valid += 1
+
+            # union (whole-cloud radial shape)
+            pc = torch.cat([pred_vac[b], pred_sia[b]], 0)
+            pw = torch.cat([vac_w[b], sia_w[b]], 0)
+            tcoords = torch.cat([self._norm_target(tv, encoder, device),
+                                 self._norm_target(ts, encoder, device)], 0)
+            pcen = self._weighted_center(pc, pw)
+            tcen = tcoords.mean(0) if len(tcoords) else pcen
+            ppdf = self._soft_pdf(pc, pw, pcen)
+            tpdf = self._soft_pdf(tcoords, None, tcen)
+            term = F.mse_loss(ppdf, tpdf)
+
+            if self.per_class:
+                for (pcd, pwd, traw) in ((pred_vac[b], vac_w[b], tv),
+                                          (pred_sia[b], sia_w[b], ts)):
+                    tn = self._norm_target(traw, encoder, device)
+                    if len(tn) == 0:
+                        continue
+                    pcc = self._weighted_center(pcd, pwd)
+                    term = term + 0.5 * F.mse_loss(self._soft_pdf(pcd, pwd, pcc),
+                                                   self._soft_pdf(tn, None, tn.mean(0)))
+            total = total + term
+
+        if valid == 0:
+            return None
+        loss = total / valid
+        info["radial_n_low_t"] = len(low_idx)
+        return loss
+
+
 class ClassificationLoss(AuxLoss):
     name = "cls"
 

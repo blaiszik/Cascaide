@@ -1,0 +1,17 @@
+# Raw simulation data (large; processed into .npz via scripts/process_raw_data.py)
+raw_data/
+
+# Generated / cached artifacts
+data/*.npz
+results/
+runs/
+checkpoints_pairs/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store

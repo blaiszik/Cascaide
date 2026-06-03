@@ -69,6 +69,16 @@ loss:
       sigma: 0.5
       start_epoch: 450               # aux_loss_start_epoch
       t_threshold_frac: 0.25         # aux_loss_t_threshold
+    radial:                          # NEW: radial-density-matching loss (targets substructure)
+      enabled: false                 # flip to true to add it; pair with the scorecard's radial_js / cluster_l1
+      weight: 0.2
+      apply_every: 1
+      nbins: 16
+      rmax: 1.5                      # in normalized [-1,1] coord space
+      sigma: 0.08
+      per_class: true                # also match vac & SIA radial shapes separately
+      start_epoch: 50
+      t_threshold_frac: 0.25         # only fire at low noise, like projection
 
 # ----- Optimizer -----
 optimizer:

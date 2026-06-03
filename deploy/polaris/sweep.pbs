@@ -1,0 +1,33 @@
+#!/bin/bash -l
+# Multi-node sweep: run one experiment per GPU across all allocated nodes (prod queue, >=10
+# nodes; or debug-scaling for <=10 nodes). Submit via the wrapper which sizes the node count:
+#     ./deploy/polaris/submit.sh sweep deploy/polaris/experiments.txt
+#
+# -A/-q/-l select/-l walltime are supplied by submit.sh (sized to the experiment count).
+#PBS -N cascaide-sweep
+#PBS -l place=scatter
+#PBS -l filesystems=home:eagle
+#PBS -j oe
+set -euo pipefail
+
+cd "${PBS_O_WORKDIR:-$(dirname "$0")/../..}"
+source deploy/polaris/config.sh
+module use /soft/modulefiles
+module load conda
+conda activate "$ENV_PREFIX"
+
+: "${EXPERIMENTS:?set EXPERIMENTS=<file> (qsub -v)}"
+CLEAN="$(mktemp)"; grep -vE '^\s*(#|$)' "$EXPERIMENTS" > "$CLEAN"   # drop comments/blanks
+NEXP=$(wc -l < "$CLEAN")
+NODES=$(sort -u "$PBS_NODEFILE" | wc -l); GPUS=$((NODES * 4))
+NRANKS=$(( NEXP < GPUS ? NEXP : GPUS ))
+export REPO DATA RESULTS RUNS_DIR EXPERIMENTS_CLEAN="$CLEAN"
+echo "[sweep] $NEXP experiments | $NODES nodes | $GPUS gpus -> launching $NRANKS ranks"
+[ "$NEXP" -gt "$GPUS" ] && echo "[sweep] WARNING: $NEXP experiments > $GPUS gpus; only first $GPUS run (request more nodes)"
+
+mkdir -p "$RESULTS"
+mpiexec -n "$NRANKS" --ppn 4 deploy/polaris/gpu_worker.sh
+
+# single race-free rebuild of the index + report after every rank finishes
+python -c "from cascaide.eval import registry, report; registry.collect('$RESULTS'); report.build_report('$RESULTS')"
+echo "[sweep] done -> $RESULTS (pull back: deploy/polaris/globus.sh pull)"

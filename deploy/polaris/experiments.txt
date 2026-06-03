@@ -1,0 +1,10 @@
+# Sweep experiment list — ONE experiment per line = extra args to scripts/train_set_v2.py.
+# (--subset, --results, --output_dir, --device, --no_report are added automatically.)
+# Blank lines and #-comments are ignored. Request enough nodes so 4*nodes >= #experiments.
+# Design any experiment matrix here, then: ./deploy/polaris/submit.sh sweep deploy/polaris/experiments.txt
+#
+# Example: scaling (model size) x energy range, on the full continuous dataset.
+--center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 256 --depth 6
+--center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 384 --depth 8
+--center per_cascade --epochs 400 --energy_bin 25 --max_defects 1000 --d_model 512 --depth 10
+--center per_cascade --epochs 400 --energy_max 100 --energy_bin 10 --d_model 256 --depth 6

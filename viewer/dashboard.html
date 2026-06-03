@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cascaide — Model Progress</title>
+<style>
+  :root{
+    --bg:#0a0f1c; --panel:#111a2e; --panel2:#0d1525; --line:#1e2c47;
+    --ink:#e6edf7; --muted:#8295b4; --accent:#56b6ff; --accent2:#7c5cff;
+    --good:#3ddc97; --warn:#ffcf5c; --bad:#ff6b6b; --real:#e6edf7; --gen:#56b6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);color:var(--ink)}
+  a{color:var(--accent)}
+  .top{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#0d1426,#0a0f1c)}
+  .top h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.2px}
+  .top .sub{color:var(--muted);font-size:12px}
+  .top .spacer{flex:1}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+    padding:4px 11px;font-size:12px;color:var(--muted)}
+  .chip b{color:var(--ink)}
+  button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+    border-radius:7px;padding:5px 10px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .wrap{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 53px)}
+  .side{border-right:1px solid var(--line);overflow:auto;background:var(--panel2)}
+  .main{overflow:auto;padding:18px 22px}
+  .filters{padding:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+  .filters input,.filters select{width:100%;background:var(--bg);color:var(--ink);
+    border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+  .frow{display:flex;gap:8px}
+  .frow>*{flex:1;min-width:0}
+  .runs{padding:8px}
+  .run{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:8px;
+    cursor:pointer;background:var(--panel);position:relative}
+  .run:hover{border-color:var(--accent)}
+  .run.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .run .rlabel{font-weight:600;display:flex;align-items:center;gap:7px}
+  .run .rmeta{color:var(--muted);font-size:11.5px;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .run .cmp{position:absolute;top:9px;right:9px}
+  .scoredot{display:inline-block;min-width:42px;text-align:center;border-radius:6px;
+    padding:1px 6px;font-weight:700;font-size:12px}
+  .tag{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:10.5px;color:var(--muted)}
+  .arch{color:var(--accent2);font-weight:600}
+  h2{font-size:14px;margin:22px 0 10px;font-weight:650;border-bottom:1px solid var(--line);padding-bottom:6px}
+  h2:first-child{margin-top:0}
+  .req{display:grid;grid-template-columns:230px 1fr 90px 60px;gap:10px;align-items:center;
+    padding:6px 0;border-bottom:1px solid var(--panel)}
+  .req .name{color:var(--ink)}
+  .req .bar{height:9px;background:var(--bg);border-radius:5px;overflow:hidden;border:1px solid var(--line)}
+  .req .bar i{display:block;height:100%}
+  .req .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .req .pf{text-align:center;font-weight:700;border-radius:5px;padding:1px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 12px 6px}
+  .card .ct{font-weight:600;margin-bottom:2px}
+  .card .cs{color:var(--muted);font-size:11.5px;margin-bottom:6px}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin:2px 0 8px}
+  .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+  .energy-tabs{display:flex;gap:6px;margin-bottom:10px}
+  .energy-tabs button.on{border-color:var(--accent);color:var(--accent)}
+  .empty{color:var(--muted);text-align:center;padding:60px 20px}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:30px;text-align:center;color:var(--muted);margin:14px}
+  svg text{fill:var(--muted);font-size:10px}
+  .hint{color:var(--muted);font-size:11.5px}
+  .pill{font-size:11px;border-radius:5px;padding:1px 7px;border:1px solid var(--line)}
+  table.counts{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  table.counts td,table.counts th{padding:5px 8px;border-bottom:1px solid var(--panel);text-align:right}
+  table.counts th{color:var(--muted);font-weight:600;text-align:right}
+  table.counts td:first-child,table.counts th:first-child{text-align:left}
+  .imgs{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:8px}
+  .cmpimg{max-width:560px;width:100%;border:1px solid var(--line);border-radius:10px;background:#fff}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Cascaide <span class="sub">· Model Progress Dashboard</span></h1>
+  <span class="chip" id="cRuns">— runs</span>
+  <span class="chip" id="cBest">best —</span>
+  <span class="chip" id="cPass">— passing</span>
+  <span class="spacer"></span>
+  <span class="hint" id="src">source: —</span>
+  <button id="reload">↻ Reload</button>
+</div>
+
+<div class="wrap">
+  <div class="side">
+    <div class="filters">
+      <input id="q" placeholder="search label / arch / git / tag…">
+      <div class="frow">
+        <select id="fArch"><option value="">all architectures</option></select>
+        <select id="fSort">
+          <option value="created">newest first</option>
+          <option value="score">best score first</option>
+          <option value="pass">most passing first</option>
+        </select>
+      </div>
+      <label class="hint"><input type="checkbox" id="fPass" style="width:auto"> passing only ·
+        <span id="cmpHint">tick boxes to compare</span></label>
+    </div>
+    <div class="runs" id="runs"></div>
+  </div>
+  <div class="main" id="main">
+    <div class="empty">Loading results…</div>
+  </div>
+</div>
+
+<script>
+const C = getComputedStyle(document.documentElement);
+const col = n => C.getPropertyValue(n).trim();
+const fmt = (x,d=3)=> (x==null||Number.isNaN(x)) ? "—" : (+x).toFixed(d);
+const state = {index:null, base:null, cards:{}, sel:new Set(), focus:null, energy:null};
+
+// ---- score → color
+function scoreColor(s){
+  if(s==null||Number.isNaN(s)) return col('--muted');
+  if(s<=0.6) return col('--good');
+  if(s<=1.1) return col('--warn');
+  return col('--bad');
+}
+
+// ---- resolve where results live (served dir, ?results=, or drag-drop)
+function candidateBases(){
+  const u = new URL(location.href);
+  const p = u.searchParams.get('results');
+  const bases = [];
+  if(p) bases.push(p.replace(/\/$/,''));
+  bases.push('../results','results','./results');
+  return bases;
+}
+async function loadIndex(){
+  for(const b of candidateBases()){
+    try{
+      const r = await fetch(b+'/index.json',{cache:'no-store'});
+      if(r.ok){ state.base=b; state.index=await r.json(); document.getElementById('src').textContent='source: '+b; return true; }
+    }catch(e){}
+  }
+  return false;
+}
+async function loadScorecard(run){
+  if(state.cards[run.run_id]) return state.cards[run.run_id];
+  const url = state.base+'/'+run.path+'scorecard.json';
+  const r = await fetch(url,{cache:'no-store'});
+  const sc = await r.json();
+  state.cards[run.run_id]=sc; return sc;
+}
+
+// ---- tiny SVG line chart: series=[{x[],y[],color,dash,name}]
+function lineChart(series,{w=300,h=150,xlab='',ylab='',ymin=null,ymax=null}={}){
+  const P={l:34,r:8,t:8,b:22};
+  const xs=series.flatMap(s=>s.x), ys=series.flatMap(s=>s.y);
+  if(!xs.length) return `<svg width="${w}" height="${h}"></svg>`;
+  const x0=Math.min(...xs), x1=Math.max(...xs);
+  let y0=ymin==null?Math.min(...ys):ymin, y1=ymax==null?Math.max(...ys):ymax;
+  if(y1<=y0) y1=y0+1;
+  const X=v=>P.l+(v-x0)/(x1-x0||1)*(w-P.l-P.r);
+  const Y=v=>h-P.b-(v-y0)/(y1-y0||1)*(h-P.t-P.b);
+  let g=`<svg width="${w}" height="${h}">`;
+  // axes
+  g+=`<line x1="${P.l}" y1="${h-P.b}" x2="${w-P.r}" y2="${h-P.b}" stroke="${col('--line')}"/>`;
+  g+=`<line x1="${P.l}" y1="${P.t}" x2="${P.l}" y2="${h-P.b}" stroke="${col('--line')}"/>`;
+  for(let i=0;i<=2;i++){const yv=y0+(y1-y0)*i/2; g+=`<text x="${P.l-4}" y="${Y(yv)+3}" text-anchor="end">${(+yv).toFixed(yv>=10?0:2)}</text>`;}
+  g+=`<text x="${(P.l+w-P.r)/2}" y="${h-4}" text-anchor="middle">${xlab}</text>`;
+  g+=`<text x="10" y="${(P.t+h-P.b)/2}" text-anchor="middle" transform="rotate(-90 10 ${(P.t+h-P.b)/2})">${ylab}</text>`;
+  for(const s of series){
+    let d=s.x.map((xv,i)=>`${i?'L':'M'}${X(xv).toFixed(1)} ${Y(s.y[i]).toFixed(1)}`).join(' ');
+    g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dash?`stroke-dasharray="5 4"`:''}/>`;
+  }
+  g+=`</svg>`; return g;
+}
+
+// ---- sidebar
+function renderRuns(){
+  const runs = (state.index?.runs||[]).slice();
+  const q=document.getElementById('q').value.toLowerCase();
+  const arch=document.getElementById('fArch').value;
+  const passOnly=document.getElementById('fPass').checked;
+  const sort=document.getElementById('fSort').value;
+  let list=runs.filter(r=>{
+    const hay=[r.label,r.arch,r.git_branch,r.git_commit,(r.tags||[]).join(' ')].join(' ').toLowerCase();
+    if(q && !hay.includes(q)) return false;
+    if(arch && r.arch!==arch) return false;
+    if(passOnly && !(r.n_passed===r.n_requirements)) return false;
+    return true;
+  });
+  list.sort((a,b)=>{
+    if(sort==='score') return (a.score??9e9)-(b.score??9e9);
+    if(sort==='pass') return (b.n_passed??-1)-(a.n_passed??-1);
+    return (b.created||'').localeCompare(a.created||'');
+  });
+  const el=document.getElementById('runs'); el.innerHTML='';
+  for(const r of list){
+    const d=document.createElement('div'); d.className='run'+(state.focus===r.run_id?' sel':'');
+    const sc=scoreColor(r.score);
+    d.innerHTML=`
+      <input type="checkbox" class="cmp" ${state.sel.has(r.run_id)?'checked':''}>
+      <div class="rlabel"><span class="scoredot" style="background:${sc}22;color:${sc}">${fmt(r.score,2)}</span>${r.label||r.run_id}</div>
+      <div class="rmeta"><span class="arch">${r.arch||'?'}</span>
+        <span>${r.n_passed??'?'}/${r.n_requirements??'?'} reqs</span>
+        ${r.normalization?`<span class="tag">${r.normalization}</span>`:''}
+        ${(r.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}
+        <span>${(r.created||'').replace('T',' ').replace('Z','')}</span>
+        ${r.git_commit?`<span class="tag">${(r.git_commit||'').slice(0,7)}</span>`:''}
+      </div>`;
+    d.querySelector('.cmp').addEventListener('click',e=>{e.stopPropagation();
+      if(e.target.checked)state.sel.add(r.run_id);else state.sel.delete(r.run_id);renderMain();});
+    d.addEventListener('click',()=>{state.focus=r.run_id;state.energy=null;renderRuns();renderMain();});
+    el.appendChild(d);
+  }
+  // header chips
+  const all=state.index?.runs||[];
+  const best=all.reduce((m,r)=>r.score!=null&&r.score<m?r.score:m,Infinity);
+  document.getElementById('cRuns').innerHTML=`<b>${all.length}</b> runs`;
+  document.getElementById('cBest').innerHTML=`best <b>${best<Infinity?best.toFixed(3):'—'}</b>`;
+  const fully=all.filter(r=>r.n_passed===r.n_requirements).length;
+  document.getElementById('cPass').innerHTML=`<b>${fully}</b> fully passing`;
+}
+
+// ---- main panel
+async function renderMain(){
+  const main=document.getElementById('main');
+  const compareIds=[...state.sel];
+  const focusId = state.focus || compareIds[0] || (state.index?.runs?.[0]?.run_id);
+  if(!focusId){ main.innerHTML='<div class="empty">No runs yet. Run <code>scripts/run_benchmark.py</code>.</div>'; return; }
+
+  const byId=Object.fromEntries((state.index.runs||[]).map(r=>[r.run_id,r]));
+  const focusRun=byId[focusId];
+  const focusSc=await loadScorecard(focusRun);
+  // compare set = checked runs (+ focus); load all scorecards
+  const cmpRuns=(compareIds.length?compareIds:[focusId]).map(id=>byId[id]).filter(Boolean);
+  const cmpScs=await Promise.all(cmpRuns.map(loadScorecard));
+
+  const energies=focusSc.energies_keV.map(e=>String(Math.round(e)));
+  if(!state.energy||!energies.includes(state.energy)) state.energy=energies[0];
+
+  // trend (score over time, colored by arch)
+  const trend=(state.index.runs||[]).filter(r=>r.score!=null)
+      .slice().sort((a,b)=>(a.created||'').localeCompare(b.created||''));
+  const trendSvg=lineChart([{x:trend.map((_,i)=>i),y:trend.map(r=>r.score),color:col('--accent'),name:'score'}],
+      {w:560,h:150,xlab:'run (chronological)',ylab:'score (lower=better)',ymin:0});
+
+  let html='';
+  // ---- header / requirements
+  html+=`<h2>${focusRun.label} <span class="hint">· ${focusRun.arch||''} · score ${fmt(focusSc.score,3)} · ${focusSc.n_requirements_passed}/${focusSc.n_requirements} requirements pass</span></h2>`;
+  html+=`<div class="hint" style="margin-bottom:10px">Requirements averaged across energies. Bar = value relative to target (full bar = at target). Green ≤ target.</div>`;
+  for(const r of focusSc.requirements){
+    const frac=Math.min(1.3, (r.value/ (r.target||1))); const c=r.pass?col('--good'):col('--bad');
+    html+=`<div class="req">
+      <div class="name">${r.label}${r.weight>1?` <span class="pill" title="weight in score">×${r.weight}</span>`:''}</div>
+      <div class="bar"><i style="width:${Math.min(100,frac*100/1.3)}%;background:${c}"></i></div>
+      <div class="val">${fmt(r.value,3)} ${r.unit||''} <span class="hint">/ ${r.target}</span></div>
+      <div class="pf" style="background:${c}22;color:${c}">${r.pass?'PASS':'FAIL'}</div>
+    </div>`;
+  }
+
+  // ---- energy tabs
+  html+=`<h2>Distributions vs real <span class="hint">· solid = real · dashed = generated</span></h2>`;
+  html+=`<div class="energy-tabs">`+energies.map(e=>`<button data-e="${e}" class="${e===state.energy?'on':''}">${e} keV</button>`).join('')+`</div>`;
+  html+=`<div class="legend"><span><i style="border-color:${col('--real')}"></i>real</span>`+
+    cmpRuns.map((r,i)=>`<span><i style="border-color:${seriesColor(i)};border-top-style:dashed"></i>${r.label}</span>`).join('')+`</div>`;
+
+  // ---- per-energy curve cards
+  const e=state.energy;
+  const card=(title,sub,svg)=>`<div class="card"><div class="ct">${title}</div><div class="cs">${sub}</div>${svg}</div>`;
+  function overlay(key,xkey,ykeyReal,ykeyGen,opts){
+    const ref=focusSc.per_energy[e][key];
+    const series=[{x:ref[xkey],y:ref[ykeyReal],color:col('--real'),dash:false,name:'real'}];
+    cmpScs.forEach((sc,i)=>{const pe=sc.per_energy[e]; if(pe&&pe[key])
+      series.push({x:pe[key][xkey],y:pe[key][ykeyGen],color:seriesColor(i),dash:true,name:cmpRuns[i].label});});
+    return lineChart(series,opts);
+  }
+  html+=`<div class="grid">`;
+  html+=card('Radial density profile','where defects sit vs distance from center (pdf)',
+        overlay('radial','r','real','gen',{w:330,h:170,xlab:'r (Å)',ylab:'pdf',ymin:0}));
+  html+=card('Pair correlation g(r)','short-range order / substructure',
+        overlay('rdf','r','real','gen',{w:330,h:170,xlab:'r (Å)',ylab:'g(r)',ymin:0}));
+  html+=card('Sub-cascade fragmentation','# clusters vs linking length — the substructure signal',
+        overlay('cluster_spectrum','scales','real','gen',{w:330,h:170,xlab:'link length (Å)',ylab:'# clusters',ymin:0}));
+  html+=`</div>`;
+
+  // ---- generated vs real cascade images (rendered into the run's samples/ dir)
+  if(focusRun.path){
+    html+=`<h2>Generated vs real cascades <span class="hint">· generated (top) vs real (bottom), per energy</span></h2>`;
+    html+=`<div class="imgs">`+energies.map(en=>
+      `<img class="cmpimg" alt="${en} keV" src="${state.base}/${focusRun.path}samples/compare_${en}keV.png" onerror="this.remove()">`
+    ).join('')+`</div>`;
+  }
+
+  // ---- counts table per energy
+  html+=`<h2>Counts & scalars by energy</h2><table class="counts">
+    <tr><th>energy</th><th>real count</th><th>gen count</th><th>radial JS</th><th>g(r) L1</th><th>cluster L1</th><th>NN W1 (Å)</th></tr>`;
+  for(const en of energies){const pe=focusSc.per_energy[en];
+    html+=`<tr><td>${en} keV</td>
+      <td>${fmt(pe.count.real_mean,1)} ± ${fmt(pe.count.real_std,1)}</td>
+      <td>${fmt(pe.count.gen_mean,1)} ± ${fmt(pe.count.gen_std,1)}</td>
+      <td>${fmt(pe.radial.js,3)}</td><td>${fmt(pe.rdf.l1,3)}</td>
+      <td style="color:${pe.cluster_spectrum.l1>0.15?col('--bad'):col('--good')}">${fmt(pe.cluster_spectrum.l1,3)}</td>
+      <td>${fmt(pe.nn.w1,2)}</td></tr>`;}
+  html+=`</table>`;
+
+  // ---- trend
+  html+=`<h2>Progress over time</h2><div class="card" style="max-width:600px">
+    <div class="cs">overall score across all runs, chronological</div>${trendSvg}</div>`;
+
+  main.innerHTML=html;
+  main.querySelectorAll('.energy-tabs button').forEach(b=>b.addEventListener('click',()=>{state.energy=b.dataset.e;renderMain();}));
+}
+function seriesColor(i){const p=[col('--gen'),col('--accent2'),col('--good'),col('--warn'),'#ff8fb1','#7ee0ff'];return p[i%p.length];}
+
+// ---- arch filter options
+function fillArch(){
+  const sel=document.getElementById('fArch'); const archs=[...new Set((state.index?.runs||[]).map(r=>r.arch).filter(Boolean))];
+  sel.innerHTML='<option value="">all architectures</option>'+archs.map(a=>`<option>${a}</option>`).join('');
+}
+
+// ---- drag & drop a scorecard.json (off-cluster, no aggregation)
+document.addEventListener('dragover',e=>{e.preventDefault()});
+document.addEventListener('drop',async e=>{
+  e.preventDefault(); const f=e.dataTransfer.files[0]; if(!f)return;
+  const sc=JSON.parse(await f.text());
+  const id='dropped-'+f.name;
+  state.cards[id]=sc;
+  if(!state.index) state.index={runs:[]};
+  state.index.runs.unshift({run_id:id,label:sc.label||f.name,arch:'dropped',
+    score:sc.score,n_passed:sc.n_requirements_passed,n_requirements:sc.n_requirements,
+    created:new Date().toISOString(),tags:['dropped'],path:null});
+  // patch loader to return cached for dropped
+  state.focus=id; fillArch(); renderRuns(); renderMain();
+});
+
+['q','fArch','fSort','fPass'].forEach(id=>document.getElementById(id).addEventListener('input',renderRuns));
+document.getElementById('reload').addEventListener('click',init);
+
+async function init(){
+  state.cards={};
+  const ok=await loadIndex();
+  if(!ok){
+    document.getElementById('main').innerHTML=
+      `<div class="drop">No <code>index.json</code> found via fetch.<br><br>
+      Serve the repo (<code>python -m http.server</code>) and open
+      <code>viewer/dashboard.html</code>, pass <code>?results=PATH</code>,
+      or <b>drag a scorecard.json onto this window</b>.</div>`;
+    return;
+  }
+  fillArch(); renderRuns(); renderMain();
+}
+init();
+</script>
+</body>
+</html>
