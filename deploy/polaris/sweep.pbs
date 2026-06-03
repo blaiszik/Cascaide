@@ -14,7 +14,9 @@ cd "${PBS_O_WORKDIR:-$(dirname "$0")/../..}"
 source deploy/polaris/config.sh
 module use /soft/modulefiles
 module load conda
-conda activate "$ENV_PREFIX"
+eval "$(conda shell.bash hook 2>/dev/null)" 2>/dev/null || true
+conda activate base
+source "$ENV_PREFIX/bin/activate"
 
 : "${EXPERIMENTS:?set EXPERIMENTS=<file> (qsub -v)}"
 CLEAN="$(mktemp)"; grep -vE '^\s*(#|$)' "$EXPERIMENTS" > "$CLEAN"   # drop comments/blanks

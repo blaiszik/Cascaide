@@ -20,6 +20,6 @@ export RUNS_DIR="${RUNS_DIR:-${EAGLE_BASE}/runs}"             # checkpoints / tr
 
 # --- Globus endpoints (UUIDs) for local<->Eagle transfers ---
 # Find with: globus endpoint search "ALCF Eagle"  and  globus endpoint local-id
-export EAGLE_ENDPOINT="${EAGLE_ENDPOINT:-<EAGLE_COLLECTION_UUID>}"   # ALCF Eagle Globus collection
-export LOCAL_ENDPOINT="${LOCAL_ENDPOINT:-<YOUR_LOCAL_GLOBUS_UUID>}"  # your laptop's Globus Connect Personal
-export EAGLE_PATH="${EAGLE_PATH:-/Cascaide/cascaide}"               # path within the Eagle collection
+export EAGLE_ENDPOINT="${EAGLE_ENDPOINT:-05d2c76a-e867-4f67-aa57-76edeb0beda0}"   # ALCF Eagle Globus collection
+export LOCAL_ENDPOINT="${LOCAL_ENDPOINT:-7b4d7fd6-5f5b-11f1-9808-0e9d40238285}"  # your laptop's Globus Connect Personal
+export EAGLE_PATH="${EAGLE_PATH:-/Cascaide/models}"               # path within the Eagle collection

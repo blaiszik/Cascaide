@@ -12,19 +12,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 echo "[setup] PROJECT=$PROJECT  ENV_PREFIX=$ENV_PREFIX  REPO=$REPO"
 mkdir -p "$(dirname "$ENV_PREFIX")" "$EAGLE_BASE/data" "$RESULTS" "$RUNS_DIR"
 
-# ALCF base conda (CUDA torch for the A100s). Clone it into our own prefix on /eagle so we
-# can add packages while keeping ALCF's known-good torch. Activation matches the standard
-# Polaris pattern: `module use /soft/modulefiles; module load conda; conda activate <env>`.
+# Lightweight venv layered ON TOP of ALCF's base conda (which has CUDA torch for the A100s).
+# We do NOT clone base: cloning copies ~158k files and Eagle (Lustre) is very slow at many
+# small files. --system-site-packages reuses base's torch/numpy IN PLACE (no copy), so the
+# venv is tiny and setup is ~1-2 min.
 module use /soft/modulefiles
 module load conda
+eval "$(conda shell.bash hook 2>/dev/null)" 2>/dev/null || true   # enable `conda activate` non-interactively
+conda activate base
 
-if [ ! -d "$ENV_PREFIX" ]; then
-  echo "[setup] cloning base conda env (ALCF CUDA torch) -> $ENV_PREFIX (this can take a few min)"
-  conda create -y --prefix "$ENV_PREFIX" --clone base
+if [ ! -f "$ENV_PREFIX/bin/activate" ]; then
+  echo "[setup] creating venv (reuses base CUDA torch via --system-site-packages; no file copy)"
+  python -m venv --system-site-packages "$ENV_PREFIX"
 fi
-conda activate "$ENV_PREFIX"
+source "$ENV_PREFIX/bin/activate"
 
-# only deps not already in base; torch/numpy come from the cloned base
+# only the few deps not in base; torch/numpy come from base via --system-site-packages
 python -m pip install --upgrade pip
 python -m pip install scipy matplotlib
 python -m pip install -e "$REPO" --no-deps     # the cascaide package (editable)
@@ -36,4 +39,4 @@ print("  torch", torch.__version__, "| cuda available:", torch.cuda.is_available
       "| #gpus:", torch.cuda.device_count())
 PY
 echo "[setup] done. Activate later with:"
-echo "    module use /soft/modulefiles; module load conda; conda activate $ENV_PREFIX"
+echo "    module use /soft/modulefiles; module load conda; conda activate base; source $ENV_PREFIX/bin/activate"
