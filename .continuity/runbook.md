@@ -68,9 +68,11 @@ Workflow: **code via git** (commit → `git pull` on Polaris), **data/artifacts 
 (local ↔ Eagle); Polaris reads/writes `/eagle` directly.
 - `config.sh` — edit once: `PROJECT` (PBS `-A`), `QUEUE`, Eagle paths, Globus endpoint UUIDs.
   (REPO auto-detected; PROJECT/endpoints are placeholders — fill in.)
-- `setup_env.sh` — conda env on Eagle cloned from ALCF base (`module load conda`, CUDA torch)
-  + `pip install scipy matplotlib` + `pip install -e . --no-deps`. Activate (user's pattern):
-  `module use /soft/modulefiles; module load conda; conda activate $ENV_PREFIX`.
+- `setup_env.sh` — **lightweight venv on Eagle over ALCF base** (`--system-site-packages`
+  reuses CUDA torch in place) + `pip install scipy matplotlib` + `pip install -e . --no-deps`.
+  Do NOT `conda --clone` to Eagle — it copies ~158k files and Lustre is pathologically slow
+  at small files (hung a setup ~15+ min, 2026-06-03). Activate: `module use /soft/modulefiles;
+  module load conda; conda activate base; source $ENV_PREFIX/bin/activate`.
 - `submit.sh train …` (1 A100, debug/preemptable) | `submit.sh sweep experiments.txt`
   (one experiment/GPU across nodes; sizes nodes=ceil(N/4); prod for ≥10 nodes).
 - `train.pbs`, `sweep.pbs`+`gpu_worker.sh` (PALS rank→GPU), `experiments.txt` (design matrix).

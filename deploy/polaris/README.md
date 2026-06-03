@@ -12,7 +12,7 @@ Polaris reads/writes `/eagle` directly during jobs.
 | file | purpose |
 |---|---|
 | `config.sh` | **edit once** — `PROJECT` (PBS `-A`), `QUEUE`, paths on Eagle, Globus endpoint UUIDs |
-| `setup_env.sh` | build the conda env on Eagle (clones ALCF base for CUDA torch; run once on a login node). Activate with `module use /soft/modulefiles; module load conda; conda activate $ENV_PREFIX` |
+| `setup_env.sh` | build a lightweight **venv on Eagle over ALCF base** (reuses CUDA torch in place via `--system-site-packages` — no slow file copy; run once on a login node). Activate: `module use /soft/modulefiles; module load conda; conda activate base; source $ENV_PREFIX/bin/activate` |
 | `globus.sh` | `push` data → Eagle, `pull` results / `pull-ckpts` back to local |
 | `submit.sh` | submit a `train` (1 GPU) or `sweep` (1 experiment/GPU across nodes) job |
 | `train.pbs` | single-experiment PBS job |
