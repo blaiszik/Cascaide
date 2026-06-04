@@ -1,0 +1,35 @@
+# SUBSTRUCTURE (RDF) sweep — attack the one remaining model weakness. 4 cells -> 1 node.
+# GOAL: lower the scorecard's rdf_l1 (pairwise-distance substructure), which the 2026-06-04
+# scorecard mining showed is the ONLY metric with headroom (radial/count/cluster/nn/conservation
+# are all near-ceiling). See .continuity/scorecard-findings.md.
+#
+#   QUEUE=debug-scaling WALLTIME=01:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments_struct.txt
+#
+# WHY this re-opens a "demoted" lever: the earlier "--w_struct hurts at w>=0.3" verdict was on
+# the LEGACY loss (pairwise_hist_loss, fixed rmax=6A). But nn distances are already ~7-11A and
+# the mean pairwise distance is 30-96A, so the 6A window held only 1-8% of the real pairs — it
+# optimized a near-empty histogram tail while the rdf_l1 METRIC judges g(r) out to the mean
+# pairwise distance. That range mismatch (not the idea) is why it failed.
+# THE FIX: --struct_mode rdf = metric-matched g(r) loss (cascaide/setdiff/losses.rdf_hist_loss):
+# per-cloud adaptive rmax (90th-pct target pairwise dist) + the SAME ideal-shell normalization
+# the metric uses + relative L1 -> directly minimizes rdf_l1. --w_nn 0 isolates the RDF term.
+# Gated to low-noise steps (--struct_t_frac 0.25, where x0 is informative) and started after a
+# warmup (--struct_start_epoch 50) so it fine-tunes structure on a partly-converged model.
+#
+# All: per_cascade, EMA, <100 keV, 256/6, cosine, 500 ep, batch 16, max_defects 1000.
+# select+finalize DISABLED (--select_every 99999 --no_results) -> fast pure-SGD; --ckpt_every 100.
+# VERDICT = OFFLINE per-regime rescore of each cell's final_model.pt with the CORRECTED eval
+# (score_checkpoint.py --gen_energy sample, now default): build a checkpoints file at
+# runs/sweep_<JOB>_r{0..3}/final_model.pt and `submit.sh score`. Compare the rdf_l1 column /
+# OVERALL across cells; w_struct=0 (r0) is the control = current best recipe.
+# Loss scale (smoke): struct~0.6 vs eps~0.28 at w=1.0, so the sweep brackets a decade of weight.
+# NO trailing #-comments on active lines (gpu_worker passes the line verbatim to python).
+# ===========================================================================================
+# r0 — CONTROL: no substructure loss (current recipe; the rdf_l1 baseline to beat)
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 500 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --w_struct 0
+# r1 — metric-matched RDF loss, light (struct ~= 0.3x the eps term)
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 500 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --w_struct 0.3 --struct_mode rdf --w_nn 0 --struct_start_epoch 50
+# r2 — metric-matched RDF loss, balanced (struct ~= the eps term)
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 500 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --w_struct 1.0 --struct_mode rdf --w_nn 0 --struct_start_epoch 50
+# r3 — metric-matched RDF loss, heavy (struct-dominant; finds the over-weighting boundary)
+--center per_cascade --energy_max 100 --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 500 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --w_struct 3.0 --struct_mode rdf --w_nn 0 --struct_start_epoch 50

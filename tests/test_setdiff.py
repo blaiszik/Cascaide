@@ -53,6 +53,26 @@ def test_substructure_loss_zero_when_equal_and_differentiable():
     assert pred.grad is not None and torch.isfinite(pred.grad).all()
 
 
+def test_rdf_hist_loss_metric_matched():
+    torch = pytest.importorskip("torch")
+    from cascaide.setdiff.losses import rdf_hist_loss, substructure_loss
+    rng = np.random.default_rng(5)
+    # a cloud whose pairwise distances span tens of units (nn ~ several units) -> the legacy
+    # 6-unit window would be near-empty; the adaptive-rmax rdf loss must still be informative.
+    x = torch.tensor(rng.normal(0, 20, size=(1, 24, 3)), dtype=torch.float32)
+    mask = torch.ones(1, 24, dtype=torch.bool)
+    pred = x.clone().requires_grad_(True)
+    loss = rdf_hist_loss(pred, x, mask)
+    assert float(loss) < 1e-4                              # identical clouds -> ~0
+    worse = rdf_hist_loss(pred * 0.4, x, mask)             # collapse -> different g(r)
+    assert float(worse) > 1e-2 and float(worse) > float(loss)
+    worse.backward()
+    assert pred.grad is not None and torch.isfinite(pred.grad).all()
+    # mode='rdf' routes through rdf_hist_loss; w_nn=0 isolates the RDF term
+    lm, info = substructure_loss(pred, x, mask, mode="rdf", w_nn=0.0)
+    assert float(lm) < 1e-4 and info["struct_nn"] == 0.0
+
+
 def test_pair_normalizer_roundtrip_recovers_vac_sia():
     from cascaide.setdiff.paired import PairNormalizer
     from cascaide.setdiff import pairing

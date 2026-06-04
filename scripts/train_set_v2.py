@@ -102,11 +102,18 @@ def main():
     # Min-SNR-gamma loss weighting (ready, default OFF so it doesn't confound the EMA run)
     ap.add_argument("--min_snr", action="store_true", help="enable Min-SNR-gamma loss weighting")
     ap.add_argument("--min_snr_gamma", type=float, default=5.0)
-    # substructure loss — DEMOTED: off by default (the sweep showed it hurts at w>=0.3).
-    # If revisiting, use a tiny weight as a fine-tune on a converged checkpoint.
+    # substructure loss — off by default. The earlier "hurts at w>=0.3" verdict was on the
+    # LEGACY fixed-6A loss, whose window holds ~1-8% of the real pairs (nn dist is already
+    # ~7-11A); that range mismatch (not the idea) is why it failed. --struct_mode rdf uses the
+    # metric-matched g(r) loss (adaptive rmax + ideal-shell norm) that directly targets rdf_l1.
     ap.add_argument("--w_struct", type=float, default=0.0)
+    ap.add_argument("--struct_mode", choices=["legacy", "rdf"], default="legacy",
+                    help="legacy = fixed-6A pairwise hist (reproduces old runs); "
+                         "rdf = metric-matched g(r) loss targeting the scorecard's rdf_l1.")
+    ap.add_argument("--w_nn", type=float, default=0.5,
+                    help="weight on the NN-spacing term inside the struct loss; 0 isolates RDF.")
     ap.add_argument("--struct_t_frac", type=float, default=0.25, help="fire only for t<frac*T")
-    ap.add_argument("--struct_rmax", type=float, default=6.0)
+    ap.add_argument("--struct_rmax", type=float, default=6.0, help="legacy mode only (rdf is adaptive)")
     ap.add_argument("--struct_start_epoch", type=int, default=20)
     # scorecard selection
     ap.add_argument("--select_every", type=int, default=20)
@@ -259,7 +266,8 @@ def main():
                     x0 = (diff._ext(diff.sqrt_recip_ab, t, x_t.shape) * x_t
                           - diff._ext(diff.sqrt_recipm1_ab, t, x_t.shape) * eps_pred)
                     sl, sinfo = substructure_loss(x0[low], coords[low], mask[low],
-                                                  rmax=args.struct_rmax)
+                                                  rmax=args.struct_rmax, w_nn=args.w_nn,
+                                                  mode=args.struct_mode)
                     loss = loss + args.w_struct * sl
                     st_l.append(sinfo["struct_hist"] + sinfo["struct_nn"])
             if not torch.isfinite(loss):

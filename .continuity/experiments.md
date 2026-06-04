@@ -54,6 +54,27 @@ Lives as commented lines in `experiments.txt`. After Exp 1: replace `WIN` with t
 scheduler, uncomment that block, comment out Exp 1, then submit as above. Cells: control ·
 `+--augment_rot` · 384/8 (epochs trimmed to 450 to fit 1 h) · 1200 ep.
 
+## Exp 3 — Substructure (RDF) sweep  (debug-scaling)  ★ headline, 2026-06-04
+`deploy/polaris/experiments_struct.txt` · 4 cells → 1 node. Attacks `rdf_l1`, the only
+scorecard metric with headroom (everything else near-ceiling — see `scorecard-findings.md`).
+Fixed at the converged recipe (256/6, <100 keV, per_cascade, EMA, cosine, 500 ep, pure-SGD via
+`--select_every 99999 --no_results`, `--ckpt_every 100`); **only the substructure loss varies**:
+1. `--w_struct 0` (control = current recipe; the `rdf_l1` baseline to beat)
+2. `--w_struct 0.3 --struct_mode rdf --w_nn 0 --struct_start_epoch 50`
+3. `--w_struct 1.0 --struct_mode rdf --w_nn 0 --struct_start_epoch 50`
+4. `--w_struct 3.0 --struct_mode rdf --w_nn 0 --struct_start_epoch 50`
+
+```sh
+QUEUE=debug-scaling WALLTIME=01:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments_struct.txt
+```
+`--struct_mode rdf` = the metric-matched `rdf_hist_loss` (adaptive per-cloud rmax + ideal-shell
+g(r) → directly minimizes `rdf_l1`); it replaces the legacy fixed-6 Å loss whose window held
+only 1–8 % of the real pairs (the reason the earlier "w≥0.3 hurts" sweep failed — range
+mismatch, not the idea). **Verdict:** offline per-regime rescore of each `runs/sweep_<JOB>_r{0..3}/
+final_model.pt` with the corrected eval (`score_checkpoint.py --gen_energy sample`, now default);
+compare the `rdf_l1` column / OVERALL vs r0. Distinct from the running Wave-1 preemptable sweep
+(different queue, range, and axis — Wave-1 varies data-rebalance/aug/capacity, not the loss).
+
 ## Preemptable sweep — full-range study  (preemptable)
 `deploy/polaris/experiments_preempt.txt` · 4 cells → 1 node. **Full 0–300 keV**, cosine, with
 `--max_defects 1000` + small batch (memory: high-E clouds up to ~1100 defects, O(N²) attn):

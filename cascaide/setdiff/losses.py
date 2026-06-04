@@ -58,6 +58,41 @@ def pairwise_hist_loss(pred, target, mask, nbins=24, rmax=6.0, sigma=0.15):
     return total / max(valid, 1)
 
 
+def rdf_hist_loss(pred, target, mask, nbins=24, rmax_q=0.9, sigma_frac=0.6):
+    """Metric-matched differentiable g(r) loss — directly targets the scorecard's ``rdf_l1``
+    (its heaviest substructure metric, weight 2.0).
+
+    Mirrors ``cascaide.eval.metrics.rdf``: per-cloud ``rmax`` = the ``rmax_q`` quantile of the
+    TARGET pairwise distances (auto-scales with cloud size / energy — unlike the fixed 6 Å of
+    ``pairwise_hist_loss``, whose window holds ~1-8% of the real pairs), then the same
+    ideal-shell normalization ``g = counts / shell_vol`` and a relative L1 on g(r). pred and
+    target share rmax and N, so the density constant cancels and only the metric's defining
+    per-bin 1/shell_vol reweighting drives the gradient. Soft (RBF) counts keep it
+    differentiable; the target is detached so gradient flows only through ``pred``."""
+    total = pred.new_zeros(())
+    valid = 0
+    for b in range(pred.shape[0]):
+        n = int(mask[b].sum())
+        if n < 2:
+            continue
+        pd = _upper(_pdist(pred[b, :n]))
+        td = _upper(_pdist(target[b, :n].detach()))
+        rmax = torch.clamp(torch.quantile(td, rmax_q), min=1e-3).detach()
+        edges = torch.linspace(0.0, float(rmax), nbins + 1, device=pred.device)
+        centers = 0.5 * (edges[1:] + edges[:-1])
+        sigma = (sigma_frac * (edges[1] - edges[0])).clamp(min=1e-6)
+        # soft COUNTS (un-normalized RBF sum) so the ideal-shell normalization applies as in
+        # the metric (a pdf-normalized hist would drop the per-bin shell reweighting).
+        kp = torch.exp(-((pd[:, None] - centers[None, :]) ** 2) / (2 * sigma ** 2)).sum(0)
+        kt = torch.exp(-((td[:, None] - centers[None, :]) ** 2) / (2 * sigma ** 2)).sum(0)
+        shell = (edges[1:] ** 3 - edges[:-1] ** 3).clamp(min=1e-9)     # ∝ shell volume
+        gp = kp / shell
+        gt = kt / shell                                                # ideal-shell g(r)
+        total = total + (gp - gt).abs().sum() / gt.sum().clamp(min=1e-8)   # relative L1
+        valid += 1
+    return total / max(valid, 1)
+
+
 def nn_distance_loss(pred, target, mask, tau=0.05):
     """Match the nearest-neighbor distance distribution per cloud.
 
@@ -87,9 +122,15 @@ def nn_distance_loss(pred, target, mask, tau=0.05):
 
 
 def substructure_loss(pred, target, mask, w_hist=1.0, w_nn=0.5,
-                      nbins=24, rmax=6.0, sigma=0.15, tau=0.05):
-    """Combined substructure loss. Returns (loss, info dict)."""
-    lh = pairwise_hist_loss(pred, target, mask, nbins=nbins, rmax=rmax, sigma=sigma)
-    ln = nn_distance_loss(pred, target, mask, tau=tau)
+                      nbins=24, rmax=6.0, sigma=0.15, tau=0.05, mode="legacy"):
+    """Combined substructure loss. Returns (loss, info dict).
+
+    ``mode``: "legacy" = the fixed-6 Å ``pairwise_hist_loss`` (kept for reproducing earlier
+    runs; its window holds almost no pairs — see ``rdf_hist_loss``). "rdf" = the
+    metric-matched ``rdf_hist_loss`` (adaptive rmax + ideal-shell g(r); directly targets
+    ``rdf_l1``). Set ``w_nn=0`` to isolate the RDF lever."""
+    lh = (rdf_hist_loss(pred, target, mask, nbins=nbins) if mode == "rdf"
+          else pairwise_hist_loss(pred, target, mask, nbins=nbins, rmax=rmax, sigma=sigma))
+    ln = nn_distance_loss(pred, target, mask, tau=tau) if w_nn else pred.new_zeros(())
     loss = w_hist * lh + w_nn * ln
     return loss, {"struct_hist": float(lh.detach()), "struct_nn": float(ln.detach())}
