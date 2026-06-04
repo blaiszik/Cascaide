@@ -28,7 +28,7 @@ export OMP_NUM_THREADS="$THREADS" MKL_NUM_THREADS="$THREADS" KMP_DUPLICATE_LIB_O
 
 CLEAN="$(mktemp)"; grep -vE '^\s*(#|$)' "$CKF" > "$CLEAN"
 NCK=$(wc -l < "$CLEAN")
-NFULL=$(grep -cvE '\-\-energy_max' "$CLEAN" 2>/dev/null || echo 0)
+NFULL=$(grep -cvE '\-\-energy_max' "$CLEAN" 2>/dev/null || true); NFULL=${NFULL:-0}
 LOGDIR="$(mktemp -d)"
 echo "[score-login] $NCK checkpoints | $JOBS parallel x $THREADS threads | n_override=${NOVR:-from-file} | logs $LOGDIR"
 [ "${NFULL:-0}" -gt 0 ] && echo "[score-login] WARNING: $NFULL full-range checkpoint(s) (no --energy_max) emit huge high-E clouds — VERY slow on CPU. Score those on A100: submit.sh score deploy/polaris/checkpoints_full.txt"
