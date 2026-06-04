@@ -6,18 +6,21 @@
 > Each sweep = one experiment per GPU; `submit.sh sweep` auto-sizes nodes = ceil(N/4).
 > Code lives on fork `blaiszik/Cascaide@tanhp99-global-centering`; `git pull` on Polaris first.
 
-## Update 2026-06-04 — reprioritize toward substructure (see `scorecard-findings.md`)
+## Update 2026-06-04 — substructure lever CLOSED; high-E is the real headroom
 
-Scorecard mining of the 2026-06-04 A100 batch changed the priorities:
-- **Target metric is now RDF / pairwise substructure** (`rdf_l1≈0.13–0.41`); every other metric
-  is near-ceiling. High-E turned out to be a *convergence* problem (250ep high-regime 0.473),
-  and the low-E "failure" was a **scorecard artifact** (bin-0 generated at 0 keV) now fixed via
-  `score_checkpoint.py --gen_energy sample` (default). **Re-score the backlog with `sample`.**
-- **Wave-1 cell B (`--energy_balance`) is de-motivated** (high-E starvation disproven; bin-0 not
-  rare). Repurpose toward a substructure lever.
-- A clean **per_cascade vs global** A/B is now well-motivated (global-center costs ~3× on RDF).
-- The substructure sweep (`pairwise_hist_loss` / `w_struct`) is the new headline experiment —
-  defs added below once chosen.
+Two rounds of findings on the 2026-06-04 A100 batch:
+- **Eval fix (stands):** the low-E "failure" was a **scorecard artifact** (bin-0 generated at
+  0 keV) — fixed via `score_checkpoint.py --gen_energy sample` (now default). **Re-score any
+  backlog / Wave-1 outputs with `sample`** before trusting the low regime.
+- **High-E is a *convergence* problem** (converged 250ep full-range high-regime 0.473 vs 2.3–3.6
+  un-converged). This is the **real remaining headroom** → Wave-1 cells A (800ep) and D (512/10).
+- **RDF / substructure lever = CLOSED (negative result).** We thought `rdf_l1` (the largest
+  metric) was the weakness and built a metric-matched g(r) loss for it (**Exp 3**). Converged,
+  equal-epoch test (job 7185401): the loss **hurts every metric incl. `rdf_l1`**, and the
+  control already **passes the whole scorecard 7/7** (`rdf_l1` 0.16 < 0.20). 2nd coordinate aux
+  loss to fail (radial was 1st). **Don't retry.** Full write-up: `substructure-loss-negative.md`.
+- **Wave-1 cell B (`--energy_balance`)** stays de-motivated (high-E starvation disproven; bin-0
+  not rare).
 
 ## Are they distinct? Yes.
 
@@ -54,7 +57,14 @@ Lives as commented lines in `experiments.txt`. After Exp 1: replace `WIN` with t
 scheduler, uncomment that block, comment out Exp 1, then submit as above. Cells: control ·
 `+--augment_rot` · 384/8 (epochs trimmed to 450 to fit 1 h) · 1200 ep.
 
-## Exp 3 — Substructure (RDF) sweep  (debug-scaling)  ★ headline, 2026-06-04
+## Exp 3 — Substructure (RDF) sweep  (debug-scaling)  ✗ DONE — NEGATIVE (2026-06-04)
+**Verdict: the g(r) loss hurts; do not use. Full write-up `substructure-loss-negative.md`.**
+Clean run = **job 7185401** (4 cells, all ep500, scored with `--gen_energy sample`): control
+(`w_struct=0`) OVERALL ~0.4–0.55 and **passes 7/7** incl. `rdf_l1` 0.16<0.20; the loss cells
+get monotonically worse with weight on *every* metric incl. `rdf_l1` (r1/r2/r3 OVERALL
+1.45/1.99/2.26). (First attempt job 7185324 died to a node RPC timeout — infra, not us.)
+`--struct_mode rdf` / `--w_struct` are demoted to experimental (default off). Original plan ↓.
+
 `deploy/polaris/experiments_struct.txt` · 4 cells → 1 node. Attacks `rdf_l1`, the only
 scorecard metric with headroom (everything else near-ceiling — see `scorecard-findings.md`).
 Fixed at the converged recipe (256/6, <100 keV, per_cascade, EMA, cosine, 500 ep, pure-SGD via

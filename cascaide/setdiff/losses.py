@@ -62,6 +62,11 @@ def rdf_hist_loss(pred, target, mask, nbins=24, rmax_q=0.9, sigma_frac=0.6):
     """Metric-matched differentiable g(r) loss — directly targets the scorecard's ``rdf_l1``
     (its heaviest substructure metric, weight 2.0).
 
+    RESULT (2026-06-04, job 7185401): this loss HURTS — converged, equal-epoch, it degrades
+    every metric incl. ``rdf_l1`` itself, and the baseline already passes the scorecard. Kept
+    for reproducibility; do NOT use. See ``.continuity/substructure-loss-negative.md``.
+
+
     Mirrors ``cascaide.eval.metrics.rdf`` AND the scorecard's average-then-L1 structure
     (``scorecard._per_energy``): per cloud, build the ideal-shell-normalized g(r) on its OWN
     ``rmax`` = the ``rmax_q`` quantile of the TARGET pairwise distances (auto-scales with cloud

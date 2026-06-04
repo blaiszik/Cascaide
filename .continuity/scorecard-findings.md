@@ -1,5 +1,13 @@
 # What the scorecards tell us about the models (2026-06-04)
 
+> **⚠️ UPDATE — later the same day, the "RDF is the lever" conclusion (TL;DR #3 below) was
+> TESTED AND REVERSED.** A converged, equal-epoch Polaris sweep of a metric-matched g(r) loss
+> showed it *hurts* every metric (including `rdf_l1`), and the converged per-cascade `<100 keV`
+> model **already passes the whole scorecard 7/7** — `rdf_l1` is the largest-*magnitude* metric
+> but is inside its 0.20 target. RDF was a non-problem here; the aux loss is a dead end. See
+> **`substructure-loss-negative.md`**. Everything else below — the **eval bug + `--gen_energy`
+> fix**, and the **per-metric / per-regime / centering facts** — remains valid.
+
 > Mined the 15 per-energy-regime scorecards pulled from Eagle (the 2026-06-04 A100 batch:
 > `checkpoints_lt100.txt` n=48 + `checkpoints_full.txt` n=12). Two outcomes: (1) an **eval
 > bug** that inflated the low-energy regime for *every* model, now fixed; (2) a clear read on
@@ -15,9 +23,11 @@
    Wave-1 cell A (train longer). Cell D (bigger model) must beat 0.473 to justify capacity.
 2. **The low-regime "failure" was a SCORECARD ARTIFACT, now fixed.** See below — fixing it
    *halves* the low-regime score (1.48 → 0.69) with no model change.
-3. **The one genuine model weakness is pairwise substructure (RDF).** Every other metric
-   (radial, count, cluster, nn, conservation) is near-ceiling; `rdf_l1 ≈ 0.13–0.41` is an
-   order of magnitude worse. This is the project's stated priority and the only lever left.
+3. **~~The one genuine model weakness is pairwise substructure (RDF).~~** `rdf_l1 ≈ 0.13–0.41`
+   is the largest-*magnitude* metric while the rest are near-ceiling — **but this read was
+   wrong as a "weakness":** the converged per_cascade `<100 keV` model passes `rdf_l1` (0.16 <
+   0.20 target) and the whole scorecard (7/7). The g(r) loss built to exploit this *hurt* the
+   model. → see `substructure-loss-negative.md`. The real headroom is full-range high-E (#1).
 4. **per_cascade centering beats global centering ~3× on substructure** — and it's a
    normalization effect, not undertraining.
 

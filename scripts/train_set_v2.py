@@ -102,14 +102,16 @@ def main():
     # Min-SNR-gamma loss weighting (ready, default OFF so it doesn't confound the EMA run)
     ap.add_argument("--min_snr", action="store_true", help="enable Min-SNR-gamma loss weighting")
     ap.add_argument("--min_snr_gamma", type=float, default=5.0)
-    # substructure loss — off by default. The earlier "hurts at w>=0.3" verdict was on the
-    # LEGACY fixed-6A loss, whose window holds ~1-8% of the real pairs (nn dist is already
-    # ~7-11A); that range mismatch (not the idea) is why it failed. --struct_mode rdf uses the
-    # metric-matched g(r) loss (adaptive rmax + ideal-shell norm) that directly targets rdf_l1.
+    # substructure loss — DEAD END, off by default. TESTED (job 7185401, converged ep500,
+    # --gen_energy sample): even the metric-matched --struct_mode rdf loss (adaptive rmax +
+    # ideal-shell g(r), batch-averaged) HURTS every metric incl. rdf_l1 itself, monotonically
+    # with weight. And the converged <100keV model already passes the whole scorecard (rdf_l1
+    # 0.16<0.20). 2nd coordinate aux loss to fail after the radial one. See
+    # .continuity/substructure-loss-negative.md. Code kept for reproducibility — DO NOT USE.
     ap.add_argument("--w_struct", type=float, default=0.0)
     ap.add_argument("--struct_mode", choices=["legacy", "rdf"], default="legacy",
-                    help="legacy = fixed-6A pairwise hist (reproduces old runs); "
-                         "rdf = metric-matched g(r) loss targeting the scorecard's rdf_l1.")
+                    help="EXPERIMENTAL/deprecated — both hurt (see substructure-loss-negative.md). "
+                         "legacy = fixed-6A pairwise hist; rdf = metric-matched g(r) loss.")
     ap.add_argument("--w_nn", type=float, default=0.5,
                     help="weight on the NN-spacing term inside the struct loss; 0 isolates RDF.")
     ap.add_argument("--struct_t_frac", type=float, default=0.25, help="fire only for t<frac*T")
