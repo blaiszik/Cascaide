@@ -34,9 +34,11 @@ def main():
     ap.add_argument("--energy_bin", type=float, default=25.0)
     ap.add_argument("--n", type=int, default=48, help="generated samples per energy")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--sampler", choices=["ddpm", "ddim", "dpmpp"], default="ddpm",
+                    help="ddpm = full T=1000 (faithful, default). ddim/dpmpp = fast few-step "
+                         "(needs --steps); dpmpp = DPM-Solver++(2M), the higher-order one to prefer.")
     ap.add_argument("--steps", type=int, default=None,
-                    help="DDIM fast-sampling steps (<<1000). Omit for full-fidelity DDPM. "
-                         "Use ~50 for quick CPU/login scoring (approximate, ~T/steps faster).")
+                    help="#steps for ddim/dpmpp (e.g. ~20 dpmpp / ~50 ddim). Ignored for ddpm.")
     ap.add_argument("--tag", action="append", default=[], help="extra tag(s)")
     ap.add_argument("--no_report", action="store_true",
                     help="write the run but skip collect()/build_report() (batch jobs rebuild once)")
@@ -51,11 +53,13 @@ def main():
 
     import time
     t0 = time.time()
-    sampler = f"DDIM-{args.steps}" if args.steps else "DDPM-1000"
-    print(f"[score] sampling {sampler} on {args.device}...", flush=True)
+    use_sampler = None if args.sampler == "ddpm" else args.sampler
+    defsteps = 20 if args.sampler == "dpmpp" else 50
+    samp_label = "DDPM-1000" if args.sampler == "ddpm" else f"{args.sampler}-{args.steps or defsteps}"
+    print(f"[score] sampling {samp_label} on {args.device}...", flush=True)
     gen, meta = generate_set_checkpoint(args.checkpoint, ref, device=args.device,
                                         n_per_energy=args.n, energy_bin=args.energy_bin,
-                                        steps=args.steps)
+                                        steps=args.steps, sampler=use_sampler)
     dt = time.time() - t0
     print(f"[score] generated {len(gen)} clouds in {dt:.0f}s ({dt/max(1,len(gen)):.1f}s/cloud); "
           f"scoring overall + per-regime...", flush=True)
@@ -80,7 +84,7 @@ def main():
         label=label, arch="set-dit-v2", normalization=meta.get("normalization", "percascade-p99"),
         checkpoint="model.pt", energies_keV=sc["energies_keV"],
         config={"energy_max": args.energy_max, "energy_bin": args.energy_bin, "score_n": args.n,
-                "sampler": sampler, "ddim_steps": args.steps,
+                "sampler": samp_label, "steps": args.steps,
                 "regime_scores": regime_scores, "source_checkpoint": args.checkpoint},
         tags=["set-dit-v2", "rescore"] + list(args.tag))
     run_dir = registry.write_run(args.results, manifest, scorecard=sc)

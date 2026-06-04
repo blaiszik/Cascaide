@@ -41,7 +41,7 @@ mkdir -p "$RESULTS"
 i=0
 while IFS= read -r line; do
   [ -n "$NOVR" ] && line="$line --n $NOVR"
-  [ "${STEPS:-0}" -gt 0 ] && line="$line --steps $STEPS"
+  [ "${STEPS:-0}" -gt 0 ] && line="$line --sampler dpmpp --steps $STEPS"
   i=$((i + 1))
   ( python scripts/score_checkpoint.py --subset "$DATA" --results "$RESULTS" \
         --no_report --device cpu $line ) > "$LOGDIR/$i.log" 2>&1 &

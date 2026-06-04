@@ -372,9 +372,41 @@ class CoordDiffusion:
                 x = x0
         return x
 
+    @torch.no_grad()
+    def sample_dpmpp(self, model, energy, types, steps=20, clip_x0=4.0):
+        """DPM-Solver++(2M): 2nd-order multistep ODE solver. Handles the curved probability-flow
+        trajectory that makes 1st-order DDIM need ~500 steps, so ~10-20 steps often match
+        DDPM-1000. Drop-in (same eps model); full self.sample() remains the reference."""
+        model.eval()
+        B, N = types.shape
+        x = torch.randn(B, N, 3, device=self.device)
+        alpha, sigma = self.sqrt_ab, self.sqrt_1m_ab
+        lam = torch.log(alpha) - torch.log(sigma)                 # half log-SNR, decreasing in t
+        # UNIFORM-log-SNR (lambda) spacing — the schedule DPM-Solver++ needs for stable 2nd order
+        lam_sched = torch.linspace(float(lam[self.T - 1]), float(lam[0]), steps + 1, device=self.device)
+        seq = (lam[None, :] - lam_sched[:, None]).abs().argmin(dim=1).long()   # timestep per schedule pt
+        x0_prev, h_prev = None, None
+        for i in range(steps):
+            s, t = int(seq[i]), int(seq[i + 1])
+            h = float(lam[t] - lam[s])
+            if h <= 1e-6:                                          # duplicate timestep -> skip
+                continue
+            ts = torch.full((B,), s, device=self.device, dtype=torch.long)
+            eps = model(x, ts, energy, types, key_padding_mask=None)
+            x0 = self.predict_x0(x, ts, eps).clamp(-clip_x0, clip_x0)
+            em1 = math.exp(-h) - 1.0
+            if x0_prev is None:                                   # 1st step: DPM-Solver++(1)=DDIM
+                D = x0
+            else:                                                 # 2nd-order multistep correction
+                r = h_prev / h
+                D = (1.0 + 0.5 / r) * x0 - (0.5 / r) * x0_prev
+            x = (float(sigma[t]) / float(sigma[s])) * x - float(alpha[t]) * em1 * D
+            x0_prev, h_prev = x0, h
+        return x
+
 @torch.no_grad()
 def generate(denoiser, diff, counthead, norm, energy_keV, energy_divisor=300.0,
-             n_samples=1, cap=1300, device='cpu', steps=None):
+             n_samples=1, cap=1300, device='cpu', steps=None, sampler=None):
     """Full generation: energy -> N_pairs -> coords -> (vac, sia) absolute."""
     e = torch.full((n_samples,), energy_keV / energy_divisor, device=device)
     npairs = counthead.sample(e, cap=cap)                       # [n_samples]
@@ -388,8 +420,13 @@ def generate(denoiser, diff, counthead, norm, energy_keV, energy_divisor=300.0,
             torch.full((np_i,), TYPE_VAC, dtype=torch.long),
             torch.full((np_i,), TYPE_SIA, dtype=torch.long)])[None].to(device)
         ei = e[i:i + 1]
-        coords = (diff.sample_ddim(denoiser, ei, types, steps=steps) if steps
-                  else diff.sample(denoiser, ei, types))[0].cpu().numpy()
+        if sampler == 'dpmpp':
+            c = diff.sample_dpmpp(denoiser, ei, types, steps=steps or 20)
+        elif sampler == 'ddim' or (steps and not sampler):
+            c = diff.sample_ddim(denoiser, ei, types, steps=steps or 50)
+        else:
+            c = diff.sample(denoiser, ei, types)
+        coords = c[0].cpu().numpy()
         coords = norm.inverse(coords)
         out.append((coords[:np_i], coords[np_i:]))              # vac, sia
     return out

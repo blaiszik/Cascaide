@@ -110,6 +110,17 @@ therefore moved them *away* from real → nn_w1 1.223→1.235, rdf 0.171→0.210
 Do NOT retry the naive version. (A proper per-cascade lattice *registration* — fit orientation+constant —
 is conceivable but the residual looks ~random, so deprioritized.)
 
+**FAST SAMPLING (inference speed) — DPM-Solver++ wins, DDIM doesn't:**
+- DDIM ruled out: needs ~500 steps to match DDPM-1000 (50→2.27, 250→1.07, 500→0.93 vs 0.86) = no speedup.
+- **DPM-Solver++(2M)** with UNIFORM-log-SNR (lambda) spacing: at ~30 steps scores within n=32 noise of full
+  DDPM-1000 (converged 300ep: dpmpp-30 0.789 / dpmpp-50 1.098 vs full 0.959) at **~15-30x speedup**
+  (0.1 vs 2.9 s/cloud) — SAME model, no retraining. Opt-in: `score_checkpoint.py --sampler dpmpp --steps 30`.
+  Gotchas that made it look broken at first: uniform-TIMESTEP spacing (must be uniform-lambda) + testing on
+  the undertrained ep59 ckpt + n=8 noise. Caveat: n=32 single-seed noise (esp. low-E small-cloud regime);
+  confirm at higher n / multi-seed on A100 before trusting dpmpp for VERDICTS (use full DDPM for those).
+- Bigger speedups if needed (require work): distillation/consistency or rectified-flow (retrain -> 1-8 steps);
+  latent diffusion or local attention (cut the per-step O(N^2) that dominates high-E).
+
 ### In flight / pending
 - **Exp 1 rerun** — scheduler sweep at **500 ep + `--ckpt_every 50`** (commit `8e652909`). PENDING submit.
 - **Preemptable rerun** — full-range, `--ckpt_every 100` (commit `a2d1c563`); old run killed at 8 min. PENDING.
