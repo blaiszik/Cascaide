@@ -352,9 +352,29 @@ class CoordDiffusion:
                 x = mean
         return x
 
+    @torch.no_grad()
+    def sample_ddim(self, model, energy, types, steps=50, clip_x0=4.0):
+        """Fast deterministic DDIM over `steps` strided timesteps (<< T): ~T/steps faster,
+        approximate. For quick scoring (esp. CPU). Full self.sample() remains the reference."""
+        model.eval()
+        B, N = types.shape
+        x = torch.randn(B, N, 3, device=self.device)
+        seq = torch.linspace(self.T - 1, 0, steps, device=self.device).round().long()
+        ab = self.sqrt_ab ** 2                                   # alpha_bar per timestep
+        for i in range(len(seq)):
+            t = torch.full((B,), int(seq[i]), device=self.device, dtype=torch.long)
+            eps = model(x, t, energy, types, key_padding_mask=None)
+            x0 = self.predict_x0(x, t, eps).clamp(-clip_x0, clip_x0)
+            if i < len(seq) - 1:
+                abp = ab[int(seq[i + 1])]
+                x = torch.sqrt(abp) * x0 + torch.sqrt(1.0 - abp) * eps
+            else:
+                x = x0
+        return x
+
 @torch.no_grad()
 def generate(denoiser, diff, counthead, norm, energy_keV, energy_divisor=300.0,
-             n_samples=1, cap=1300, device='cpu'):
+             n_samples=1, cap=1300, device='cpu', steps=None):
     """Full generation: energy -> N_pairs -> coords -> (vac, sia) absolute."""
     e = torch.full((n_samples,), energy_keV / energy_divisor, device=device)
     npairs = counthead.sample(e, cap=cap)                       # [n_samples]
@@ -368,7 +388,8 @@ def generate(denoiser, diff, counthead, norm, energy_keV, energy_divisor=300.0,
             torch.full((np_i,), TYPE_VAC, dtype=torch.long),
             torch.full((np_i,), TYPE_SIA, dtype=torch.long)])[None].to(device)
         ei = e[i:i + 1]
-        coords = diff.sample(denoiser, ei, types)[0].cpu().numpy()
+        coords = (diff.sample_ddim(denoiser, ei, types, steps=steps) if steps
+                  else diff.sample(denoiser, ei, types))[0].cpu().numpy()
         coords = norm.inverse(coords)
         out.append((coords[:np_i], coords[np_i:]))              # vac, sia
     return out

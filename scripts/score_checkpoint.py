@@ -34,6 +34,9 @@ def main():
     ap.add_argument("--energy_bin", type=float, default=25.0)
     ap.add_argument("--n", type=int, default=48, help="generated samples per energy")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--steps", type=int, default=None,
+                    help="DDIM fast-sampling steps (<<1000). Omit for full-fidelity DDPM. "
+                         "Use ~50 for quick CPU/login scoring (approximate, ~T/steps faster).")
     ap.add_argument("--tag", action="append", default=[], help="extra tag(s)")
     ap.add_argument("--no_report", action="store_true",
                     help="write the run but skip collect()/build_report() (batch jobs rebuild once)")
@@ -46,9 +49,16 @@ def main():
     emax = f", <{int(args.energy_max)}keV" if args.energy_max else ", full-range"
     print(f"[score] {label}: {len(ref)} ref cascades{emax} | n={args.n}/energy | {args.device}", flush=True)
 
+    import time
+    t0 = time.time()
+    sampler = f"DDIM-{args.steps}" if args.steps else "DDPM-1000"
+    print(f"[score] sampling {sampler} on {args.device}...", flush=True)
     gen, meta = generate_set_checkpoint(args.checkpoint, ref, device=args.device,
-                                        n_per_energy=args.n, energy_bin=args.energy_bin)
-    print(f"[score] generated {len(gen)} clouds; scoring overall + per-regime...", flush=True)
+                                        n_per_energy=args.n, energy_bin=args.energy_bin,
+                                        steps=args.steps)
+    dt = time.time() - t0
+    print(f"[score] generated {len(gen)} clouds in {dt:.0f}s ({dt/max(1,len(gen)):.1f}s/cloud); "
+          f"scoring overall + per-regime...", flush=True)
 
     sc = scm.compute(gen, ref, label=label, energy_bin=args.energy_bin)
 
@@ -70,6 +80,7 @@ def main():
         label=label, arch="set-dit-v2", normalization=meta.get("normalization", "percascade-p99"),
         checkpoint="model.pt", energies_keV=sc["energies_keV"],
         config={"energy_max": args.energy_max, "energy_bin": args.energy_bin, "score_n": args.n,
+                "sampler": sampler, "ddim_steps": args.steps,
                 "regime_scores": regime_scores, "source_checkpoint": args.checkpoint},
         tags=["set-dit-v2", "rescore"] + list(args.tag))
     run_dir = registry.write_run(args.results, manifest, scorecard=sc)

@@ -1,6 +1,9 @@
-# A100 only (big high-E clouds, slow on CPU): QUEUE=debug-scaling ./deploy/polaris/submit.sh score deploy/polaris/checkpoints_full.txt
+# A100 only (big high-E clouds). 4 ckpts -> 1 node, run in parallel (one per GPU):
+#   QUEUE=debug-scaling WALLTIME=01:00:00 ./deploy/polaris/submit.sh score deploy/polaris/checkpoints_full.txt
+# n=12 (not 48): a 300 keV cloud (~2000 defects, O(N^2) attn x T=1000) is ~15-25 s on A100, so
+# ~13 bins x 12 ~= 12-15 min/ckpt -> fits the 1 h cap. Bump --n (24/48) only with a longer walltime.
 # Generated split of checkpoints.txt. NO trailing #-comments on active lines.
---checkpoint /lus/eagle/projects/Cascaide/models/rescore/00-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 48
---checkpoint /lus/eagle/projects/Cascaide/models/rescore/03-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 48
---checkpoint /lus/eagle/projects/Cascaide/models/rescore/04-set-dit-v2-ema-per-cascade-250ep.pt --label set-dit-v2-ema-per-cascade-250ep --energy_bin 25 --n 48
---checkpoint /lus/eagle/projects/Cascaide/models/rescore/07-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/00-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 12
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/03-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 12
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/04-set-dit-v2-ema-per-cascade-250ep.pt --label set-dit-v2-ema-per-cascade-250ep --energy_bin 25 --n 12
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/07-set-dit-v2.pt --label set-dit-v2 --energy_bin 25 --n 12

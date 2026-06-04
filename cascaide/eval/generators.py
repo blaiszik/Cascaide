@@ -38,7 +38,7 @@ def _import_sp_cas():
 
 # --------------------------------------------------------------------------- set pipeline
 def generate_set_checkpoint(checkpoint, reference, device=None, n_per_energy=48,
-                            energy_bin=None):
+                            energy_bin=None, steps=None):
     if not checkpoint:
         raise ValueError("set-checkpoint requires --checkpoint")
     sp = _import_sp_cas()
@@ -48,7 +48,7 @@ def generate_set_checkpoint(checkpoint, reference, device=None, n_per_energy=48,
     out = []
     for e_keV, n in _energy_counts(reference, cap=n_per_energy, energy_bin=energy_bin).items():
         samples = sp.generate(den, diff, ch, norm, float(e_keV), energy_divisor=ediv,
-                              n_samples=n, cap=cap, device=diff.device)
+                              n_samples=n, cap=cap, device=diff.device, steps=steps)
         for vac, sia in samples:
             out.append({"vac": np.asarray(vac, np.float32),
                         "sia": np.asarray(sia, np.float32), "energy": float(e_keV)})

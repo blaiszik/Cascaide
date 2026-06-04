@@ -18,6 +18,10 @@ CKF="${1:?usage: score_login.sh <checkpoints.txt> [parallel_jobs] [n_override]}"
 JOBS="${2:-6}"               # checkpoints scored concurrently
 NOVR="${3:-}"                # optional: override --n on every line (argparse takes the last)
 THREADS="${THREADS:-4}"      # torch/OMP threads per process
+STEPS="${STEPS:-0}"          # DDIM fast-sampling steps; 0 = full DDPM-1000 (DEFAULT, faithful).
+                             # DDIM degrades scores on this model (50 steps gave 2.27 vs 0.86 true;
+                             # needs ~500 to match = no real speedup) -> rough preview only.
+                             # For trustworthy scores use the A100: submit.sh score.
 
 module use /soft/modulefiles 2>/dev/null || true
 module load conda 2>/dev/null || true
@@ -37,6 +41,7 @@ mkdir -p "$RESULTS"
 i=0
 while IFS= read -r line; do
   [ -n "$NOVR" ] && line="$line --n $NOVR"
+  [ "${STEPS:-0}" -gt 0 ] && line="$line --steps $STEPS"
   i=$((i + 1))
   ( python scripts/score_checkpoint.py --subset "$DATA" --results "$RESULTS" \
         --no_report --device cpu $line ) > "$LOGDIR/$i.log" 2>&1 &
