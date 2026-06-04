@@ -1,0 +1,35 @@
+#!/bin/bash -l
+# Batch-score checkpoints on A100s: one checkpoint per GPU across all allocated nodes.
+# Generation (T=1000 sampling) is the cost, so this runs where the GPUs + checkpoints are
+# (Eagle) instead of slow local MPS. Sizes nodes via submit.sh = ceil(#checkpoints / 4).
+#     ./deploy/polaris/submit.sh score deploy/polaris/checkpoints.txt
+# -A/-q/-l select/-l walltime come from submit.sh.
+#PBS -N cascaide-score
+#PBS -l place=scatter
+#PBS -l filesystems=home:eagle
+#PBS -j oe
+set -euo pipefail
+
+cd "${PBS_O_WORKDIR:-$(dirname "$0")/../..}"
+source deploy/polaris/config.sh
+module use /soft/modulefiles
+module load conda
+eval "$(conda shell.bash hook 2>/dev/null)" 2>/dev/null || true
+conda activate base
+source "$ENV_PREFIX/bin/activate"
+
+: "${CHECKPOINTS:?set CHECKPOINTS=<file> (qsub -v)}"
+CLEAN="$(mktemp)"; grep -vE '^\s*(#|$)' "$CHECKPOINTS" > "$CLEAN"   # drop comments/blanks
+NCK=$(wc -l < "$CLEAN")
+NODES=$(sort -u "$PBS_NODEFILE" | wc -l); GPUS=$((NODES * 4))
+NRANKS=$(( NCK < GPUS ? NCK : GPUS ))
+export REPO DATA RESULTS RUNS_DIR CHECKPOINTS_CLEAN="$CLEAN"
+echo "[score] $NCK checkpoints | $NODES nodes | $GPUS gpus -> scoring $NRANKS ranks"
+[ "$NCK" -gt "$GPUS" ] && echo "[score] WARNING: $NCK checkpoints > $GPUS gpus; only first $GPUS scored (request more nodes)"
+
+mkdir -p "$RESULTS"
+mpiexec -n "$NRANKS" --ppn 4 deploy/polaris/score_worker.sh
+
+# single race-free rebuild of the index + report after every rank finishes
+python -c "from cascaide.eval import registry, report; registry.collect('$RESULTS'); report.build_report('$RESULTS')"
+echo "[score] done -> $RESULTS (pull back: deploy/polaris/globus.sh pull)"
