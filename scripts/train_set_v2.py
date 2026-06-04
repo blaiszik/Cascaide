@@ -86,6 +86,10 @@ def main():
                     help="SO(3) rotation augmentation (per_cascade only): rotate each centered "
                          "cloud by a fresh random rotation every epoch — free data multiplication "
                          "+ enforces orientation invariance the set-DiT lacks")
+    ap.add_argument("--energy_balance", action="store_true",
+                    help="oversample rare (high-E) cascades via a per-energy-bin inverse-frequency "
+                         "WeightedRandomSampler (per_cascade only) — feeds the data-starved high-E "
+                         "regime so training sees energies ~uniformly")
     ap.add_argument("--energy_max", type=float, default=None, help="keep cascades <= this keV")
     ap.add_argument("--max_defects", type=int, default=None,
                     help="drop cascades with max(n_vac,n_sia) > this (memory cap for O(N^2) attention)")
@@ -164,8 +168,24 @@ def main():
         print(f"[v2] {len(ds)} cascades | device={dev} | center=global | "
               f"G={norm.G.round(1)} s={norm.s.round(1)}")
 
-    tl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=True,
-                    collate_fn=sp.collate_dynamic)
+    if args.energy_balance and args.center == "per_cascade":
+        # inverse-frequency weight per cascade so rare (high-E) bins are oversampled to ~uniform
+        item_ekev = np.array([float(it[2]) * args.energy_divisor for it in ds.items])
+        ebin = (lambda x: round(x / args.energy_bin) * args.energy_bin) if args.energy_bin else round
+        bins = np.array([ebin(e) for e in item_ekev])
+        uniq, cnt = np.unique(bins, return_counts=True)
+        freq = dict(zip(uniq.tolist(), cnt.tolist()))
+        w = torch.tensor([1.0 / freq[ebin(e)] for e in item_ekev], dtype=torch.float)
+        sampler = torch.utils.data.WeightedRandomSampler(w, num_samples=len(ds), replacement=True)
+        tl = DataLoader(ds, batch_size=args.batch_size, sampler=sampler, drop_last=True,
+                        collate_fn=sp.collate_dynamic)
+        print(f"[v2] energy_balance: {len(uniq)} energy bins, oversampling rare ones "
+              f"(weight x{float(w.max() / w.min()):.0f} hi/lo)")
+    else:
+        if args.energy_balance:
+            print("[v2] WARNING: --energy_balance only wired for --center per_cascade; ignored.")
+        tl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=True,
+                        collate_fn=sp.collate_dynamic)
     den = sp.SetDenoiser(d_model=args.d_model, depth=args.depth, n_heads=args.n_heads).to(dev)
     ch = sp.CountHead().to(dev)
     diff = sp.CoordDiffusion(T=1000, schedule="cosine", device=dev)

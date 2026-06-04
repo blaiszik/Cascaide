@@ -1,0 +1,23 @@
+# WAVE 1 — high-energy-regime diagnostic sweep (full 0-300 keV). 4 cells -> 1 node, preemptable.
+# GOAL: find which lever moves the FAILING high-E regime (per the sampling scan, full-range
+# models fail at high E while low/mid are decent). A=baseline, B=data-rebalance, C=augment, D=capacity.
+#
+#   QUEUE=preemptable WALLTIME=24:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments_wave1.txt
+#
+# All: per_cascade, EMA, FULL range (no --energy_max), max_defects 1000, --ckpt_every 100
+# (preempt-safe rolling latest.pt). In-job select+finalize are DISABLED (--select_every 99999
+# --no_results) so training is fast pure-SGD; health = the per-epoch loss + ep s/ep in the log.
+# VERDICT = per-energy-regime OFFLINE rescore of each cell's final_model.pt / latest.pt on A100:
+#   build a checkpoints file pointing at runs/sweep_<JOB>_r{0..3}/final_model.pt (full-range, no
+#   --energy_max) then `submit.sh score`. Compare the HIGH regime column across A/B/C/D.
+# --lr_sched cosine (swap in the Exp-1 scheduler winner once known). D (512/10) is the long pole.
+# NO trailing #-comments on active lines (gpu_worker passes the line verbatim to python).
+# ===========================================================================================
+# A — converged full-range baseline (is high-E just undertraining? + the reference)
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine
+# B — + energy-balanced sampling (is high-E a data-imbalance problem? -> justifies the MD ask)
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --energy_balance
+# C — + SO(3) rotation augmentation (does data-multiplication help the data-starved high-E?)
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 16 --epochs 800 --d_model 256 --depth 6 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine --augment_rot
+# D — larger model, converged (does capacity help high-E substructure?) — long pole, 512/10 batch 8
+--center per_cascade --energy_bin 25 --max_defects 1000 --batch_size 8 --epochs 500 --d_model 512 --depth 10 --select_every 99999 --ckpt_every 100 --no_results --lr_sched cosine
