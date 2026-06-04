@@ -57,10 +57,11 @@ def test_rdf_hist_loss_metric_matched():
     torch = pytest.importorskip("torch")
     from cascaide.setdiff.losses import rdf_hist_loss, substructure_loss
     rng = np.random.default_rng(5)
-    # a cloud whose pairwise distances span tens of units (nn ~ several units) -> the legacy
-    # 6-unit window would be near-empty; the adaptive-rmax rdf loss must still be informative.
-    x = torch.tensor(rng.normal(0, 20, size=(1, 24, 3)), dtype=torch.float32)
-    mask = torch.ones(1, 24, dtype=torch.bool)
+    # a BATCH of clouds whose pairwise distances span tens of units (nn ~ several units) -> the
+    # legacy 6-unit window would be near-empty; the adaptive-rmax rdf loss must still be
+    # informative. B>1 exercises the average-then-L1 (batch-averaged g(r)) path.
+    x = torch.tensor(rng.normal(0, 20, size=(4, 24, 3)), dtype=torch.float32)
+    mask = torch.ones(4, 24, dtype=torch.bool)
     pred = x.clone().requires_grad_(True)
     loss = rdf_hist_loss(pred, x, mask)
     assert float(loss) < 1e-4                              # identical clouds -> ~0

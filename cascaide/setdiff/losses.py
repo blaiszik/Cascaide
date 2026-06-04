@@ -62,14 +62,19 @@ def rdf_hist_loss(pred, target, mask, nbins=24, rmax_q=0.9, sigma_frac=0.6):
     """Metric-matched differentiable g(r) loss — directly targets the scorecard's ``rdf_l1``
     (its heaviest substructure metric, weight 2.0).
 
-    Mirrors ``cascaide.eval.metrics.rdf``: per-cloud ``rmax`` = the ``rmax_q`` quantile of the
-    TARGET pairwise distances (auto-scales with cloud size / energy — unlike the fixed 6 Å of
-    ``pairwise_hist_loss``, whose window holds ~1-8% of the real pairs), then the same
-    ideal-shell normalization ``g = counts / shell_vol`` and a relative L1 on g(r). pred and
-    target share rmax and N, so the density constant cancels and only the metric's defining
-    per-bin 1/shell_vol reweighting drives the gradient. Soft (RBF) counts keep it
-    differentiable; the target is detached so gradient flows only through ``pred``."""
-    total = pred.new_zeros(())
+    Mirrors ``cascaide.eval.metrics.rdf`` AND the scorecard's average-then-L1 structure
+    (``scorecard._per_energy``): per cloud, build the ideal-shell-normalized g(r) on its OWN
+    ``rmax`` = the ``rmax_q`` quantile of the TARGET pairwise distances (auto-scales with cloud
+    size/energy and makes the bin grid a fraction-of-extent coordinate, unlike the fixed 6 Å of
+    ``pairwise_hist_loss`` whose window holds ~1-8 % of the real pairs); then AVERAGE g(r) over
+    the batch BEFORE the relative L1. The metric compares g(r) *averaged over many clouds* —
+    matching a single ~40-point cascade's g(r) chases noise and can distort the model, so we
+    average first. The per-cloud density constant ``rmax**3 / n**2`` keeps each g(r) ~O(1) so
+    mixed-energy clouds combine as the metric intends; remaining global constants cancel in the
+    relative L1. Target detached; gradient flows only through ``pred``."""
+    device = pred.device
+    gp_sum = pred.new_zeros(nbins)
+    gt_sum = pred.new_zeros(nbins)
     valid = 0
     for b in range(pred.shape[0]):
         n = int(mask[b].sum())
@@ -78,7 +83,7 @@ def rdf_hist_loss(pred, target, mask, nbins=24, rmax_q=0.9, sigma_frac=0.6):
         pd = _upper(_pdist(pred[b, :n]))
         td = _upper(_pdist(target[b, :n].detach()))
         rmax = torch.clamp(torch.quantile(td, rmax_q), min=1e-3).detach()
-        edges = torch.linspace(0.0, float(rmax), nbins + 1, device=pred.device)
+        edges = torch.linspace(0.0, float(rmax), nbins + 1, device=device)
         centers = 0.5 * (edges[1:] + edges[:-1])
         sigma = (sigma_frac * (edges[1] - edges[0])).clamp(min=1e-6)
         # soft COUNTS (un-normalized RBF sum) so the ideal-shell normalization applies as in
@@ -86,11 +91,15 @@ def rdf_hist_loss(pred, target, mask, nbins=24, rmax_q=0.9, sigma_frac=0.6):
         kp = torch.exp(-((pd[:, None] - centers[None, :]) ** 2) / (2 * sigma ** 2)).sum(0)
         kt = torch.exp(-((td[:, None] - centers[None, :]) ** 2) / (2 * sigma ** 2)).sum(0)
         shell = (edges[1:] ** 3 - edges[:-1] ** 3).clamp(min=1e-9)     # ∝ shell volume
-        gp = kp / shell
-        gt = kt / shell                                                # ideal-shell g(r)
-        total = total + (gp - gt).abs().sum() / gt.sum().clamp(min=1e-8)   # relative L1
+        dens = (rmax ** 3) / (n * n)                                   # ideal-gas density factor
+        gp_sum = gp_sum + (kp / shell) * dens
+        gt_sum = gt_sum + (kt / shell) * dens
         valid += 1
-    return total / max(valid, 1)
+    if valid == 0:
+        return pred.new_zeros(())
+    mean_gp = gp_sum / valid
+    mean_gt = gt_sum / valid
+    return (mean_gp - mean_gt).abs().sum() / mean_gt.sum().clamp(min=1e-8)   # relative L1
 
 
 def nn_distance_loss(pred, target, mask, tau=0.05):
