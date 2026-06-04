@@ -6,6 +6,19 @@
 > Each sweep = one experiment per GPU; `submit.sh sweep` auto-sizes nodes = ceil(N/4).
 > Code lives on fork `blaiszik/Cascaide@tanhp99-global-centering`; `git pull` on Polaris first.
 
+## Update 2026-06-04 — reprioritize toward substructure (see `scorecard-findings.md`)
+
+Scorecard mining of the 2026-06-04 A100 batch changed the priorities:
+- **Target metric is now RDF / pairwise substructure** (`rdf_l1≈0.13–0.41`); every other metric
+  is near-ceiling. High-E turned out to be a *convergence* problem (250ep high-regime 0.473),
+  and the low-E "failure" was a **scorecard artifact** (bin-0 generated at 0 keV) now fixed via
+  `score_checkpoint.py --gen_energy sample` (default). **Re-score the backlog with `sample`.**
+- **Wave-1 cell B (`--energy_balance`) is de-motivated** (high-E starvation disproven; bin-0 not
+  rare). Repurpose toward a substructure lever.
+- A clean **per_cascade vs global** A/B is now well-motivated (global-center costs ~3× on RDF).
+- The substructure sweep (`pairwise_hist_loss` / `w_struct`) is the new headline experiment —
+  defs added below once chosen.
+
 ## Are they distinct? Yes.
 
 | | **Exp 1** | **Exp 2** (staged) | **Preemptable sweep** |

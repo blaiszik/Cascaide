@@ -39,6 +39,14 @@ def main():
                          "(needs --steps); dpmpp = DPM-Solver++(2M), the higher-order one to prefer.")
     ap.add_argument("--steps", type=int, default=None,
                     help="#steps for ddim/dpmpp (e.g. ~20 dpmpp / ~50 ddim). Ignored for ddpm.")
+    ap.add_argument("--gen_energy", choices=["center", "bin_mean", "sample"], default="sample",
+                    help="energy each generated cloud is conditioned on. DEFAULT 'sample' = one "
+                         "real reference energy per cloud (gold standard: generation is energy-"
+                         "matched to the reference within each bin). 'center' = the LEGACY bin-"
+                         "center behavior, which biases bin-0 (generates at 0 keV ≈ no cascade "
+                         "vs a ref window averaging ~5.5 keV) and inflates the low regime ~2x; "
+                         "use it to reproduce pre-2026-06-04 scores. 'bin_mean' = the bin's mean "
+                         "ref energy (one energy per bin).")
     ap.add_argument("--tag", action="append", default=[], help="extra tag(s)")
     ap.add_argument("--no_report", action="store_true",
                     help="write the run but skip collect()/build_report() (batch jobs rebuild once)")
@@ -59,7 +67,8 @@ def main():
     print(f"[score] sampling {samp_label} on {args.device}...", flush=True)
     gen, meta = generate_set_checkpoint(args.checkpoint, ref, device=args.device,
                                         n_per_energy=args.n, energy_bin=args.energy_bin,
-                                        steps=args.steps, sampler=use_sampler)
+                                        steps=args.steps, sampler=use_sampler,
+                                        gen_energy=args.gen_energy)
     dt = time.time() - t0
     print(f"[score] generated {len(gen)} clouds in {dt:.0f}s ({dt/max(1,len(gen)):.1f}s/cloud); "
           f"scoring overall + per-regime...", flush=True)
@@ -84,7 +93,7 @@ def main():
         label=label, arch="set-dit-v2", normalization=meta.get("normalization", "percascade-p99"),
         checkpoint="model.pt", energies_keV=sc["energies_keV"],
         config={"energy_max": args.energy_max, "energy_bin": args.energy_bin, "score_n": args.n,
-                "sampler": samp_label, "steps": args.steps,
+                "sampler": samp_label, "steps": args.steps, "gen_energy": args.gen_energy,
                 "regime_scores": regime_scores, "source_checkpoint": args.checkpoint},
         tags=["set-dit-v2", "rescore"] + list(args.tag))
     run_dir = registry.write_run(args.results, manifest, scorecard=sc)

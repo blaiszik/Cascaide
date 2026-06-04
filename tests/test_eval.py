@@ -88,6 +88,32 @@ def test_scorecard_blob_fails_substructure_not_shape():
     assert sc["score"] > 0.5
 
 
+def test_energy_targets_modes():
+    """The scorer's per-bin conditioning energy: 'center' is the legacy bin center (and at
+    bin-0 the unphysical left edge), 'bin_mean'/'sample' are energy-matched to the reference."""
+    from cascaide.eval.generators import _energy_targets
+    rng = np.random.default_rng(7)
+    # bin-0 = [0,12.5): reference energies centered ~6 keV, NOT 0. bin-25 = [12.5,37.5): ~25.
+    ref = ([{"energy": float(e)} for e in rng.uniform(1, 12, size=40)]
+           + [{"energy": float(e)} for e in rng.uniform(18, 32, size=40)])
+
+    center = dict(_energy_targets(ref, cap=None, energy_bin=25.0, gen_energy="center"))
+    binmean = dict(_energy_targets(ref, cap=None, energy_bin=25.0, gen_energy="bin_mean"))
+    sample = dict(_energy_targets(ref, cap=None, energy_bin=25.0, gen_energy="sample", seed=0))
+
+    # center: every cloud conditioned at the bin center (bin-0 -> exactly 0, the left edge)
+    assert np.allclose(center[0.0], 0.0)
+    assert np.allclose(center[25.0], 25.0)
+    # bin_mean: the bin's mean reference energy (well above 0 for bin-0 -> fixes the bias)
+    assert binmean[0.0][0] > 4.0 and np.ptp(binmean[0.0]) == 0.0
+    # sample: varied real energies, each inside the bin's half-open range
+    assert np.ptp(sample[0.0]) > 0 and sample[0.0].min() >= 0 and sample[0.0].max() < 12.5
+    assert np.all((sample[25.0] >= 12.5) & (sample[25.0] < 37.5))
+    # the whole point: legacy 'center' under-conditions bin-0 vs the energy-matched modes
+    assert center[0.0].mean() < binmean[0.0].mean()
+    assert center[0.0].mean() < sample[0.0].mean()
+
+
 def test_radial_aux_loss_differentiable():
     torch = pytest.importorskip("torch")
     from cascaide.encoding.tanh_image import TanhImageEncoder

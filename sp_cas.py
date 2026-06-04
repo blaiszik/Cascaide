@@ -407,8 +407,19 @@ class CoordDiffusion:
 @torch.no_grad()
 def generate(denoiser, diff, counthead, norm, energy_keV, energy_divisor=300.0,
              n_samples=1, cap=1300, device='cpu', steps=None, sampler=None):
-    """Full generation: energy -> N_pairs -> coords -> (vac, sia) absolute."""
-    e = torch.full((n_samples,), energy_keV / energy_divisor, device=device)
+    """Full generation: energy -> N_pairs -> coords -> (vac, sia) absolute.
+
+    ``energy_keV`` may be a scalar (all n_samples conditioned on the same energy, the legacy
+    path) OR a 1-D array of length n_samples (one conditioning energy per sample) — the latter
+    lets the scorer energy-match generation to the reference clouds instead of the bin center.
+    """
+    e_keV = np.atleast_1d(np.asarray(energy_keV, dtype=np.float32))
+    if e_keV.size == 1:
+        e = torch.full((n_samples,), float(e_keV[0]) / energy_divisor, device=device)
+    elif e_keV.size == n_samples:
+        e = torch.as_tensor(e_keV / energy_divisor, dtype=torch.float32, device=device)
+    else:
+        raise ValueError(f"energy_keV array len {e_keV.size} != n_samples {n_samples}")
     npairs = counthead.sample(e, cap=cap)                       # [n_samples]
     out = []
     for i in range(n_samples):

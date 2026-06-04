@@ -47,6 +47,7 @@ python sp_cas.py
 - `polaris.md` — **ALCF Polaris handoff** (deploy/polaris kit, resume steps, gotchas). Active 2026-06-03.
 - `experiments.md` — **Polaris experiment registry**: exact re-runnable sweep defs (Exp 1 scheduler / Exp 2 / preemptable full-range) + preemption-recovery steps + fast-sampling finding. Active 2026-06-03.
 - `sampling-scan.md` — **DPM-Solver++ fast-inference scan** across all models (overall + per-energy-regime; ~20× sampler). Approximate/screening. Active 2026-06-03.
+- `scorecard-findings.md` — **what the scorecards reveal about the models**: RDF/substructure is the only weakness left, radial is solved, per_cascade > global ~3×, high-E is convergence; + the bin-0 eval artifact & the `--gen_energy` fix. Active 2026-06-04.
 - `runbook.md` — env setup (the `cascaide` mamba env w/ ovito), data gotchas, real-data facts.
 - `log.md` — running session notes (append-only).
 

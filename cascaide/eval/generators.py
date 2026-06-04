@@ -26,6 +26,42 @@ def _energy_counts(reference, decimals=0, cap=None, energy_bin=None):
     return dict(c)
 
 
+def _energy_targets(reference, decimals=0, cap=None, energy_bin=None,
+                    gen_energy="center", seed=0):
+    """Per energy bin, return (label_energy, conditioning_energies[]) for generation.
+
+    ``gen_energy`` controls what energy each generated cloud is conditioned on:
+      - "center"   (legacy): the bin center round(e/bin)*bin. For bin-0 this is the LEFT
+                   edge (0 keV ≈ no cascade), not the bin's mean — a systematic low-E bias,
+                   because the reference window [0, bin/2) averages well above 0 keV.
+      - "bin_mean": the mean reference energy within the bin (fixes the bin-0 left-edge bias,
+                   one conditioning energy per bin so generation stays batched).
+      - "sample":  one real reference energy per generated cloud — makes the generated set's
+                   within-bin energy distribution identical to the reference (gold standard).
+    The label energy is the bin center for "center" (byte-identical legacy behavior) and the
+    actual conditioning energy otherwise, so binning/regime-slicing stay consistent."""
+    def key(e):
+        return round(e / energy_bin) * energy_bin if energy_bin else round(e, decimals)
+    bins = {}
+    for s in reference:
+        bins.setdefault(key(float(s["energy"])), []).append(float(s["energy"]))
+    rng = np.random.default_rng(seed)
+    out = []
+    for center, energies in sorted(bins.items()):
+        n = len(energies) if cap is None else min(len(energies), cap)
+        if gen_energy == "center":
+            cond = np.full(n, float(center), dtype=np.float32)
+        elif gen_energy == "bin_mean":
+            cond = np.full(n, float(np.mean(energies)), dtype=np.float32)
+        elif gen_energy == "sample":
+            ener = np.asarray(energies, dtype=np.float32)
+            cond = rng.choice(ener, size=n, replace=(n > ener.size))
+        else:
+            raise ValueError(f"unknown gen_energy mode: {gen_energy!r}")
+        out.append((float(center), cond))
+    return out
+
+
 def _import_sp_cas():
     path = os.path.join(os.getcwd(), "sp_cas.py")
     if not os.path.exists(path):
@@ -38,7 +74,8 @@ def _import_sp_cas():
 
 # --------------------------------------------------------------------------- set pipeline
 def generate_set_checkpoint(checkpoint, reference, device=None, n_per_energy=48,
-                            energy_bin=None, steps=None, sampler=None):
+                            energy_bin=None, steps=None, sampler=None,
+                            gen_energy="center", seed=0):
     if not checkpoint:
         raise ValueError("set-checkpoint requires --checkpoint")
     sp = _import_sp_cas()
@@ -46,13 +83,19 @@ def generate_set_checkpoint(checkpoint, reference, device=None, n_per_energy=48,
     ediv = cfg.get("energy_divisor", 300.0)
     cap = cfg.get("count_cap", 1300)
     out = []
-    for e_keV, n in _energy_counts(reference, cap=n_per_energy, energy_bin=energy_bin).items():
-        samples = sp.generate(den, diff, ch, norm, float(e_keV), energy_divisor=ediv,
-                              n_samples=n, cap=cap, device=diff.device, steps=steps, sampler=sampler)
-        for vac, sia in samples:
+    for center, cond in _energy_targets(reference, cap=n_per_energy, energy_bin=energy_bin,
+                                        gen_energy=gen_energy, seed=seed):
+        # "center": pass a scalar so the legacy generate() path is exercised byte-identically.
+        e_arg = float(center) if gen_energy == "center" else cond
+        samples = sp.generate(den, diff, ch, norm, e_arg, energy_divisor=ediv,
+                              n_samples=len(cond), cap=cap, device=diff.device,
+                              steps=steps, sampler=sampler)
+        for (vac, sia), e_cond in zip(samples, cond):
+            e_label = float(center) if gen_energy == "center" else float(e_cond)
             out.append({"vac": np.asarray(vac, np.float32),
-                        "sia": np.asarray(sia, np.float32), "energy": float(e_keV)})
-    return out, {"normalization": "coordnorm-p99", "energy_divisor": ediv}
+                        "sia": np.asarray(sia, np.float32), "energy": e_label})
+    return out, {"normalization": "coordnorm-p99", "energy_divisor": ediv,
+                 "gen_energy": gen_energy}
 
 
 # ------------------------------------------------------------------------- paired pipeline
