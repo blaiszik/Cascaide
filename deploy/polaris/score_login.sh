@@ -28,8 +28,10 @@ export OMP_NUM_THREADS="$THREADS" MKL_NUM_THREADS="$THREADS" KMP_DUPLICATE_LIB_O
 
 CLEAN="$(mktemp)"; grep -vE '^\s*(#|$)' "$CKF" > "$CLEAN"
 NCK=$(wc -l < "$CLEAN")
+NFULL=$(grep -cvE '\-\-energy_max' "$CLEAN" 2>/dev/null || echo 0)
 LOGDIR="$(mktemp -d)"
 echo "[score-login] $NCK checkpoints | $JOBS parallel x $THREADS threads | n_override=${NOVR:-from-file} | logs $LOGDIR"
+[ "${NFULL:-0}" -gt 0 ] && echo "[score-login] WARNING: $NFULL full-range checkpoint(s) (no --energy_max) emit huge high-E clouds — VERY slow on CPU. Score those on A100: submit.sh score deploy/polaris/checkpoints_full.txt"
 mkdir -p "$RESULTS"
 
 i=0
@@ -38,7 +40,8 @@ while IFS= read -r line; do
   i=$((i + 1))
   ( python scripts/score_checkpoint.py --subset "$DATA" --results "$RESULTS" \
         --no_report --device cpu $line ) > "$LOGDIR/$i.log" 2>&1 &
-  if [ $((i % JOBS)) -eq 0 ]; then wait; fi   # launch JOBS at a time, drain, repeat
+  # keep at most JOBS running; refill as each finishes so one slow ckpt can't gate a batch
+  while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || sleep 2; done
 done < "$CLEAN"
 wait
 

@@ -1,0 +1,9 @@
+# CPU-friendly: <100 keV checkpoints (small clouds). ./deploy/polaris/score_login.sh deploy/polaris/checkpoints_lt100.txt 6 16
+# Generated split of checkpoints.txt. NO trailing #-comments on active lines.
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/01-set-dit-v2-ema-per-cascade-30ep-100kev-polaris-7.pt --label set-dit-v2-ema-per-cascade-30ep-100kev-polaris-7 --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/02-set-dit-v2-ema-per-cascade-300ep-100kev.pt --label set-dit-v2-ema-per-cascade-300ep-100kev --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/05-vignesh-set-dit-global-center-ep569-100kev.pt --label vignesh-set-dit-global-center-ep569-100kev --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/06-set-dit-v2-cosine-per-cascade-100kev-best-ep59-p.pt --label set-dit-v2-cosine-per-cascade-100kev-best-ep59-p --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/08-sched-cosine-warmup-best7183204.pt --label sched-cosine-warmup-best7183204 --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/09-sched-onecycle-best7183204.pt --label sched-onecycle-best7183204 --energy_max 100 --energy_bin 25 --n 48
+--checkpoint /lus/eagle/projects/Cascaide/models/rescore/10-sched-plateau-best7183204.pt --label sched-plateau-best7183204 --energy_max 100 --energy_bin 25 --n 48
