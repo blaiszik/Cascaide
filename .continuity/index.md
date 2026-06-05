@@ -49,6 +49,7 @@ python sp_cas.py
 - `sampling-scan.md` — **DPM-Solver++ fast-inference scan** across all models (overall + per-energy-regime; ~20× sampler). Approximate/screening. Active 2026-06-03.
 - `scorecard-findings.md` — **what the scorecards reveal about the models**: radial is solved, per_cascade > global ~3×, high-E is convergence; + the bin-0 eval artifact & the `--gen_energy` fix. (Its "RDF is the lever" call was later reversed — see next.) Active 2026-06-04.
 - `substructure-loss-negative.md` — **team briefing: the RDF/g(r) aux loss is a dead end** (converged equal-epoch test; hurts every metric incl. `rdf_l1`; `<100 keV` model already passes 7/7). 2nd coordinate aux loss to fail after radial → don't bolt distributional losses on coords. Active 2026-06-04.
+- `convergence-500ep-augment.md` — **the new best model: 500 epochs + `--augment_rot`** beats the 250ep baseline by ~0.19 OVERALL / −0.33 high-E (n=24, every regime). Includes the fine-grained n=12 convergence trace (20 ckpts; slow improvement, no early plateau) and the deep n=24 verdict + the n=24 sampling-variance caveat. **`final_model.pt` is the new standing best.** Active 2026-06-05.
 - `runbook.md` — env setup (the `cascaide` mamba env w/ ovito), data gotchas, real-data facts.
 - `log.md` — running session notes (append-only).
 

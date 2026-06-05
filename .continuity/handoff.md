@@ -2,33 +2,28 @@
 
 > The first thing the next agent reads. Keep it current and forward-looking.
 
-_Last updated: 2026-06-05 by Claude (set-DiT training on Polaris/Modal; eval fix; centering + substructure results)._
+_Last updated: 2026-06-05 by Claude (500ep + augment_rot landed = new best model; convergence trace + n=24 verdict)._
 _Branch: `tanhp99-global-centering` (fork `blaiszik/Cascaide`, the push target — `origin`=vigsam is read-only)._
 
-## ⏳ IN FLIGHT — the immediate next action
+## ✅ LANDED — 500ep + augmentation is the NEW BEST MODEL (full writeup: `convergence-500ep-augment.md`)
 
-A **Modal A100 run is training right now** (app `ap-KUIg1l1P6BaEjLTsvipaZR`, detached, launched
-2026-06-05 ~14:15 CDT, ~3.3 h ≈ ~$12 of the remaining ~$15 credit). It is the **best-bet model**:
-per_cascade · EMA · cosine · 256/6 · full 0–300 keV · **500 epochs · `--augment_rot`** · scoring
-DISABLED (`--select_every 99999 --no_results`) · **`--save_every 25`** (a convergence trace).
-Checkpoints write straight to the Modal Volume `cascaide-results` under
-`ckpts/percascade_500ep_aug/` (`ckpt_0025.pt … ckpt_0500.pt` + `final_model.pt`), with a
-**periodic VOL.commit() every ~2 min** so a timeout/crash keeps the trace.
+The best-bet Modal run (app `ap-KUIg1l1P6BaEjLTsvipaZR`) **finished clean at ep 500/500** and the
+result is decisive: **per_cascade · 500 epochs · `--augment_rot`** beats the prior-best 250ep
+baseline by **~0.19 OVERALL and −0.33 on high-E** (n=24, full-range, dpmpp-20, `--gen_energy sample`),
+winning **every regime and rdf metric** and clearing one more requirement (6/7 vs 5/7).
+→ **`results/ckpts/percascade_500ep_aug/final_model.pt` is the new standing best per_cascade model.**
 
-**When it finishes** (check `cd /tmp && modal app list`; state→stopped, or logs show `ep 500/500`):
-1. Pull the trace: `cd /tmp && modal volume get --force cascaide-results runs/... ` — actually
-   the checkpoints are under `ckpts/percascade_500ep_aug/`; pull that dir, e.g.
-   `modal volume get --force cascaide-results ckpts/percascade_500ep_aug /Users/blaiszik/Desktop/git/Cascaide/results/ckpts/percascade_500ep_aug` (or `modal run deploy/modal/modal_app.py::fetch`).
-2. **Convergence curve** (the user's question — "do they converge early?"): rescore each
-   `ckpt_00NN.pt` OFFLINE with the corrected eval and plot score vs epoch. Use the same recipe as
-   the centering A/B (`/tmp/centering_ab.py` is a template): `generate_set_checkpoint(ck, ref,
-   device="mps", n_per_energy=24, energy_bin=25.0, sampler="dpmpp", steps=20, gen_energy="sample")`
-   then `scorecard.compute`. (n=24 full-range dpmpp-20 ≈ 4 min/ckpt on MPS; 20 ckpts ≈ ~80 min, so
-   maybe subsample epochs, or run a few first.)
-3. **Verdict:** rescore `final_model.pt` head-to-head vs the current best per_cascade model
-   (`results/runs/20260603T082541-set-dit-v2-87ec2c1b/model.pt`, full-range 250ep, OVERALL ~0.66)
-   to see if 500ep + augmentation beat it. Report OVERALL + low/mid/high + rdf_l1.
-4. Log results to `log.md`; if it's a new best, note it in `experiments.md`.
+- **Convergence question answered ("do they converge early?"): no early plateau** — a fine-grained
+  n=12 trace over all 20 checkpoints shows slow, noisy improvement throughout, best band ep 375–500;
+  `rdf_l1`/`rdf_hi`/high-E hit run-minima at ep 500. Figure: `figures/convergence_500ep_aug.png`.
+- **Caveat that matters:** n=24 still wobbles ~±0.15 absolute run-to-run (the `seed` arg doesn't pin
+  the reverse-diffusion sampler) — trust *within-run* deltas, not cross-run absolutes. Seed the
+  sampler before the next cross-run verdict. See `convergence-500ep-augment.md` §4.
+- Tooling added: `scripts/score_trace.py` (cached convergence-trace scorer that can trail a live
+  run), `/tmp/verdict.py` (n=24 head-to-head). All 20 ckpts pulled to `results/ckpts/percascade_500ep_aug/`.
+
+**Immediate next options:** capacity 512/10 (budget-permitting) and even-longer epochs are the open
+levers (curve hadn't flattened by 500); high-E is improved but still the weakest regime (0.64).
 
 ## What we know (this session's results — receipts in the linked docs)
 
@@ -49,9 +44,10 @@ Checkpoints write straight to the Modal Volume `cascaide-results` under
 - **Training loss ≠ sample quality** (seen 3×). Lower eps loss is often a normalization artifact;
   judge ONLY by the offline scorecard.
 
-**Proven recipe to build on:** per_cascade · EMA · cosine LR · 256/6 · `--max_defects 1000` · batch 16.
-Untested-but-plausible levers left: longer epochs (in flight), `--augment_rot` (in flight),
-capacity 512/10 (budget-permitting), `--min_snr` (lower priority).
+**Proven recipe to build on:** per_cascade · EMA · cosine LR · 256/6 · `--max_defects 1000` · batch 16
+· **500 epochs · `--augment_rot`** (both now PROVEN positive — see `convergence-500ep-augment.md`).
+Untested-but-plausible levers left: capacity 512/10 (budget-permitting), even-longer epochs (the
+500ep curve hadn't flattened), `--min_snr` (lower priority).
 
 ## ⚠️ Eval correctness — ALWAYS score with `--gen_energy sample`
 
