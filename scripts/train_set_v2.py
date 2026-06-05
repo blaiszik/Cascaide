@@ -124,6 +124,10 @@ def main():
                     help="also save a rolling latest.pt every N epochs (atomic overwrite). Lets a "
                          "walltime kill leave a CONVERGED checkpoint to rescore offline, instead of "
                          "trusting the noisy in-training selection (best_by_scorecard.pt)")
+    ap.add_argument("--save_every", type=int, default=0,
+                    help="also save a DISTINCT ckpt_<epoch>.pt every N epochs (kept, not "
+                         "overwritten) — a convergence trace to rescore offline and see when the "
+                         "model actually converges")
     ap.add_argument("--results", default="results")
     ap.add_argument("--finalize_n", type=int, default=8,
                     help="samples/energy for the final results-store run (T=1000 sampling is slow)")
@@ -330,6 +334,10 @@ def main():
             tmp = os.path.join(args.output_dir, "latest.pt.tmp")
             save(tmp, epoch)
             os.replace(tmp, os.path.join(args.output_dir, "latest.pt"))
+
+        # distinct kept checkpoints — the convergence trace
+        if args.save_every and (epoch + 1) % args.save_every == 0:
+            save(os.path.join(args.output_dir, f"ckpt_{epoch + 1:04d}.pt"), epoch)
 
     save(os.path.join(args.output_dir, "final_model.pt"), args.epochs - 1)
     print(f"[v2] done. best scorecard {best_score:.3f} -> {best_path}", flush=True)

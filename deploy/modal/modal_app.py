@@ -37,39 +37,53 @@ image = (
 app = modal.App("cascaide-setv2")
 
 
-@app.function(image=image, gpu=GPU, timeout=60 * 60 * 3, volumes={"/root/results": VOL})
+@app.function(image=image, gpu=GPU, timeout=60 * 60 * 5, volumes={"/root/results": VOL})
 def train_one(epochs, center, energy_max, energy_bin, max_defects, count_cap,
-              batch_size, select_every, select_n, finalize_n):
-    """Train on a Modal GPU; write the results store to the Volume (survives client sleep)."""
+              batch_size, select_every, select_n, finalize_n,
+              augment_rot=False, save_every=0, no_results=False, run_name=None):
+    """Train on a Modal GPU. Checkpoints are written DIRECTLY onto the Volume (out_dir under
+    /root/results) so they survive the container — including the --save_every convergence
+    trace — and persist on VOL.commit()."""
     import subprocess
     os.chdir("/root")
+    tag = run_name or f"{center}_{epochs}ep" + ("_aug" if augment_rot else "")
+    out_dir = f"/root/results/ckpts/{tag}"
     cmd = ["python", "scripts/train_set_v2.py",
            "--subset", "data/cascaide_cascades.npz",
-           "--output_dir", "runs/modal_full",
+           "--output_dir", out_dir,
            "--center", center, "--epochs", str(epochs),
            "--energy_bin", str(energy_bin), "--max_defects", str(max_defects),
            "--count_cap", str(count_cap), "--batch_size", str(batch_size),
            "--select_every", str(select_every), "--select_n", str(select_n),
-           "--finalize_n", str(finalize_n),
+           "--finalize_n", str(finalize_n), "--save_every", str(save_every),
            "--results", "/root/results", "--device", "cuda"]
     if energy_max and energy_max > 0:
         cmd += ["--energy_max", str(energy_max)]
+    if augment_rot:
+        cmd += ["--augment_rot"]
+    if no_results:
+        cmd += ["--no_results"]
+    print(f"[modal] {' '.join(cmd)}", flush=True)
     subprocess.run(cmd, check=True)
-    VOL.commit()                       # persist results in the cloud
-    print("[modal] results committed to Volume 'cascaide-results'")
+    VOL.commit()                       # persist checkpoints + results in the cloud
+    print(f"[modal] committed to Volume 'cascaide-results' -> {out_dir}")
 
 
 @app.local_entrypoint()
 def main(epochs: int = 250, center: str = "per_cascade", energy_max: float = 0.0,
          energy_bin: float = 25.0, max_defects: int = 1000, count_cap: int = 1200,
          batch_size: int = 16, select_every: int = 125, select_n: int = 8,
-         finalize_n: int = 12):
-    print(f"Modal run on {GPU}: full 0-300 keV, center={center}, epochs={epochs} "
-          f"(hard 3h ceiling; results -> Volume 'cascaide-results').")
+         finalize_n: int = 12, augment_rot: bool = False, save_every: int = 0,
+         no_results: bool = False, run_name: str = ""):
+    print(f"Modal run on {GPU}: full 0-300 keV, center={center}, epochs={epochs}, "
+          f"augment_rot={augment_rot}, save_every={save_every}, no_results={no_results} "
+          f"(5h ceiling; checkpoints -> Volume 'cascaide-results').")
     print("Launch with --detach so it survives sleep; fetch later with "
           "`modal run deploy/modal/modal_app.py::fetch`")
     train_one.remote(epochs, center, energy_max, energy_bin, max_defects,
-                     count_cap, batch_size, select_every, select_n, finalize_n)
+                     count_cap, batch_size, select_every, select_n, finalize_n,
+                     augment_rot=augment_rot, save_every=save_every,
+                     no_results=no_results, run_name=run_name or None)
     print("Training submitted. Results are in the Volume when done.")
 
 
