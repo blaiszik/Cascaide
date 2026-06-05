@@ -64,9 +64,23 @@ def train_one(epochs, center, energy_max, energy_bin, max_defects, count_cap,
     if no_results:
         cmd += ["--no_results"]
     print(f"[modal] {' '.join(cmd)}", flush=True)
-    subprocess.run(cmd, check=True)
-    VOL.commit()                       # persist checkpoints + results in the cloud
-    print(f"[modal] committed to Volume 'cascaide-results' -> {out_dir}")
+    import time
+    # Run training as a child and commit the Volume every ~2 min so a timeout / node crash
+    # keeps the checkpoints written so far (Modal does NOT auto-commit on SIGKILL). At most the
+    # last ~2 min of writes is lost — never a full save_every checkpoint (those are ~8 min apart).
+    proc = subprocess.Popen(cmd)
+    t_last = time.time()
+    while proc.poll() is None:
+        time.sleep(10)
+        if time.time() - t_last >= 120:
+            VOL.commit()
+            t_last = time.time()
+            print("[modal] periodic Volume commit", flush=True)
+    rc = proc.wait()
+    VOL.commit()                       # final commit
+    print(f"[modal] committed to Volume 'cascaide-results' -> {out_dir} (rc={rc})")
+    if rc != 0:
+        raise RuntimeError(f"training exited with code {rc}")
 
 
 @app.local_entrypoint()
