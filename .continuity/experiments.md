@@ -85,6 +85,27 @@ final_model.pt` with the corrected eval (`score_checkpoint.py --gen_energy sampl
 compare the `rdf_l1` column / OVERALL vs r0. Distinct from the running Wave-1 preemptable sweep
 (different queue, range, and axis — Wave-1 varies data-rebalance/aug/capacity, not the loss).
 
+## Exp 4 — per_cascade vs global centering A/B  (Modal)  ✓ DONE — per_cascade wins, 2026-06-05
+Matched Modal runs (EMA/cosine/250ep/full-range, only `--center` differs), rescored identically
+(full-range, n=24, dpmpp-20, `--gen_energy sample`). per_cascade beats global on every metric &
+regime: OVERALL 0.661 vs 0.882, rdf_l1 0.168 vs 0.272, low/mid/high all worse. **Keep per_cascade.**
+Models: `results/runs/20260603T082541-…` (per_cascade) · `…20260605T164803-…` (global). See `log.md`.
+
+## Exp 5 — best-bet model: per_cascade 500ep + augment_rot  (Modal)  ⏳ IN FLIGHT, 2026-06-05
+The accumulated-evidence best bet — convergence (the only headroom is high-E, which is
+convergence-limited) + SO(3) augmentation (targets the data-starved high-E band). NO aux losses
+(ruled out), NO global (worse), NO energy_balance (de-motivated).
+```sh
+cd /tmp && modal run --detach /Users/blaiszik/Desktop/git/Cascaide/deploy/modal/modal_app.py::main \
+  --center per_cascade --epochs 500 --augment-rot --save-every 25 \
+  --select-every 99999 --no-results --run-name percascade_500ep_aug
+```
+per_cascade · EMA · cosine · 256/6 · full-range · 500ep · `--augment_rot` · scoring OFF · `--save_every 25`.
+App `ap-KUIg1l1P6BaEjLTsvipaZR`. Checkpoints → Volume `cascaide-results:ckpts/percascade_500ep_aug/`
+(`ckpt_0025..0500.pt` + `final_model.pt`), periodic-commit safe. ~3.3 h ≈ $12. **Verdict = offline
+`--gen_energy sample` rescore of the trace (convergence curve) + `final_model.pt` vs the Exp-4
+per_cascade baseline.** See `handoff.md` for the post-run steps.
+
 ## Preemptable sweep — full-range study  (preemptable)
 `deploy/polaris/experiments_preempt.txt` · 4 cells → 1 node. **Full 0–300 keV**, cosine, with
 `--max_defects 1000` + small batch (memory: high-E clouds up to ~1100 defects, O(N²) attn):
