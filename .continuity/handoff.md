@@ -2,7 +2,7 @@
 
 > The first thing the next agent reads. Keep it current and forward-looking.
 
-_Last updated: 2026-06-05 by Claude (500ep + augment_rot landed = new best model; convergence trace + n=24 verdict)._
+_Last updated: 2026-06-06 by Claude (new best = 500ep+aug; report cards added; Wave 2 plan written — resting until Mon high-E data drop)._
 _Branch: `tanhp99-global-centering` (fork `blaiszik/Cascaide`, the push target — `origin`=vigsam is read-only)._
 
 ## ✅ LANDED — 500ep + augmentation is the NEW BEST MODEL (full writeup: `convergence-500ep-augment.md`)
@@ -22,8 +22,13 @@ winning **every regime and rdf metric** and clearing one more requirement (6/7 v
 - Tooling added: `scripts/score_trace.py` (cached convergence-trace scorer that can trail a live
   run), `/tmp/verdict.py` (n=24 head-to-head). All 20 ckpts pulled to `results/ckpts/percascade_500ep_aug/`.
 
-**Immediate next options:** capacity 512/10 (budget-permitting) and even-longer epochs are the open
-levers (curve hadn't flattened by 500); high-E is improved but still the weakest regime (0.64).
+**▶ NEXT (the plan is written; resting until the data arrives):** ~1000 new high-E cascades land
+**Mon 2026-06-08**, then a long Polaris run. Full plan = **Wave 2 (Exp 6–9) in `experiments.md`**.
+Do-first prerequisite = **Exp 6 eval hardening** (seed the sampler, add a held-out `--test_frac` split,
+multi-seed high-E scoring) — without it the long run is judged by a ±0.15, train-contaminated ruler.
+Then Exp 7 (data A/B: does +1000 high-E move high-E?), Exp 8 (long epochs×capacity scan on old+new,
+held-out convergence curves), Exp 9 (conditional high-E levers: specialist/curriculum, O(3) reflections,
+`--min_snr`). High-E is improved (0.64) but still the weakest regime — the target.
 
 ## What we know (this session's results — receipts in the linked docs)
 

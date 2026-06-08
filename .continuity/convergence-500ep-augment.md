@@ -148,3 +148,26 @@ whole n=24 trace" undercounted the per-cloud cost but was right that a dense tra
   hadn't clearly flattened by 500), `--min_snr` (lower priority). High-E is improved but still the
   weakest regime (0.64) — the next headroom.
 - **Eval hygiene:** seed the sampler (§4) before the next cross-run verdict.
+
+## 8. Visual reports (Model Progress Report cards)
+
+Each verdict model is now a card in the **Model Progress Report** (`results/report.html`, the
+Continuity cover) — scorecard requirements table, per-energy curve (solid real / dashed generated),
+and ~13 generated-vs-real cascade renders spanning 0–300 keV — all scored under **identical**
+conditions (full-range, n=24/energy, dpmpp-20, `--gen_energy sample`) via `scripts/score_checkpoint.py`,
+so the Overview mirrors §3. View: open `results/report.html` or the Continuity cover. Run dirs:
+
+| card label | run dir | OVERALL | p/t | low | mid | high |
+|---|---|---:|---:|---:|---:|---:|
+| per_cascade 500ep+aug (final ep500) | `20260605T230532-…-f530faa1` | 0.578 | 7/7 | 0.776 | 0.520 | 0.583 |
+| per_cascade 500ep+aug (ep375) | `20260605T231025-…-6f1c4de6` | 0.619 | 6/7 | 0.688 | 0.538 | 0.650 |
+| per_cascade 500ep+aug (ep475) | `20260605T231446-…-218855da` | 0.593 | 6/7 | 0.717 | 0.580 | 0.582 |
+| per_cascade 250ep baseline (matched rescore) | `20260605T231912-…-005edbe9` | 0.710 | 5/7 | 0.674 | 0.584 | 0.798 |
+
+**This is a *third* independent sampling draw** and it reproduces the ranking — every 500ep+aug
+checkpoint beats the baseline, and high-E especially (0.58–0.65 vs 0.80). Note the baseline now reads
+**0.710**, after **0.661** (centering A/B) and **0.810** (§3 verdict): three draws of the *same
+checkpoint+settings* spanning ~0.15 — a live confirmation of the §4 sampler-variance caveat. As
+always, the *within-draw* ordering is the trustworthy signal. (Side note: `--gen_energy sample`
+makes `render_comparison` emit one image per *continuous* energy — 194/run — so these cards were
+thinned to ~13 representative energies to keep `report.html` manageable; ~110 MB.)

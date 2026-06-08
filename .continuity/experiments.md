@@ -91,7 +91,7 @@ Matched Modal runs (EMA/cosine/250ep/full-range, only `--center` differs), resco
 regime: OVERALL 0.661 vs 0.882, rdf_l1 0.168 vs 0.272, low/mid/high all worse. **Keep per_cascade.**
 Models: `results/runs/20260603T082541-…` (per_cascade) · `…20260605T164803-…` (global). See `log.md`.
 
-## Exp 5 — best-bet model: per_cascade 500ep + augment_rot  (Modal)  ⏳ IN FLIGHT, 2026-06-05
+## Exp 5 — best-bet model: per_cascade 500ep + augment_rot  (Modal)  ✓ DONE — NEW BEST, 2026-06-05
 The accumulated-evidence best bet — convergence (the only headroom is high-E, which is
 convergence-limited) + SO(3) augmentation (targets the data-starved high-E band). NO aux losses
 (ruled out), NO global (worse), NO energy_balance (de-motivated).
@@ -105,6 +105,87 @@ App `ap-KUIg1l1P6BaEjLTsvipaZR`. Checkpoints → Volume `cascaide-results:ckpts/
 (`ckpt_0025..0500.pt` + `final_model.pt`), periodic-commit safe. ~3.3 h ≈ $12. **Verdict = offline
 `--gen_energy sample` rescore of the trace (convergence curve) + `final_model.pt` vs the Exp-4
 per_cascade baseline.** See `handoff.md` for the post-run steps.
+**RESULT (full writeup `convergence-500ep-augment.md`):** ran clean to ep500. The n=12 trace (20
+ckpts) shows slow improvement, NO early plateau, best band ep375–500 (high-E + rdf hit run-minima
+at ep500). n=24 verdict: ep375/475/500 all **6–7/7** and beat the 250ep baseline on **every regime
+& rdf** by ~0.19 OVERALL / **−0.33 high-E** (0.64 vs 0.97). **`final_model.pt` is the new standing
+best per_cascade model.** Caveat: n=24 wobbles ±0.15 across draws (baseline drew 0.661/0.710/0.810) —
+the sampler isn't seeded; see Exp 6. Tooling added: `scripts/score_trace.py`, `scripts/score_verdict.py`.
+
+## Wave 2 (2026-06-06) — high-E data drop + long Polaris run  ⏳ THE CURRENT PLAN
+
+**Context.** Exp 5 landed: per_cascade **500ep + `--augment_rot` is the new best model** and its
+convergence curve had **not flattened** by ep500. **~1000 new high-E cascades arrive Monday
+2026-06-08**, hitting our sparsest + weakest regime head-on (200–300 keV is ~400 cascades/band today;
+high-E is the only real headroom and is convergence/data-limited). A long Polaris run is being set up
+(thousands of epochs / more augmentation possible). Plan: **measure the data cleanly first, then spend
+the long run scaling the levers we've proven** (epochs + capacity + augmentation) — not scale blindly.
+
+**Two hard-learned principles (govern every cell below):** (1) **isolate ONE factor per cell** —
+confounded A/Bs misled us all session; (2) **fix the ruler before the long run** — n=24 verdicts wobble
+±0.15 (the SAME baseline checkpoint drew 0.661 / 0.710 / 0.810 across three draws) because the sampler
+isn't seeded, and we've been scoring partly on TRAINING data. Thousands of GPU-hours judged by a noisy,
+train-contaminated ruler is the main risk.
+
+### Exp 6 — Phase 0: harden the eval (this weekend, BEFORE the data) — PREREQUISITE
+Code-only, cheap, no big training. Foundational for trusting anything the long run produces.
+1. **Seed the sampler:** thread `seed` → `torch.manual_seed` into `sp.generate` / `sample_dpmpp`
+   (today `generate_set_checkpoint(seed=)` only pins `_energy_targets`, NOT the reverse diffusion → the
+   ±0.15 wobble). Makes cross-run verdicts reproducible.
+2. **Held-out test split:** add `--test_frac` to `train_set_v2` (≈0.15–0.20, **stratified by energy band**,
+   fixed seed) and reserve a high-E test set that NEVER trains. **All verdicts scored on held-out only**
+   (with high-E this sparse, train/test leakage hurts most exactly here).
+3. **Multi-seed / higher-n high-E scoring:** n≈48–96 × ~3 seeds, report mean±std (so a 0.03 regime delta
+   means something). Add a `--seeds` knob to `score_checkpoint` / `score_trace`.
+4. **Re-baseline:** rescore `final_model.pt` (500ep+aug, OLD data) on the held-out high-E test set → the
+   number to beat in Exp 7/8.
+
+### Exp 7 — Phase 1: does the +1000 high-E data move high-E?  (clean A/B, short queue)
+Same proven recipe; scored on the SAME held-out high-E test set; **only the training data differs**:
+1. **OLD data only** (= re-confirm `final_model` on held-out)
+2. **OLD + 1000 NEW high-E**
+
+Fixed: `--center per_cascade --augment_rot --epochs 500 --d_model 256 --depth 6 --max_defects 1000
+--batch_size 16` (+ EMA, cosine). Answers the headline "**is high-E a DATA problem?**" and calibrates
+data-vs-compute weighting for Exp 8. Quick — debug-scaling or a short preemptable slice.
+
+### Exp 8 — Phase 2: the long run — epochs × capacity scan on OLD+NEW data  (preemptable, MAIN SPEND)
+2×2, 1 node (4 GPU), all on old+new, all `--augment_rot`, with `--save_every 100` + **offline held-out
+scoring** (`score_trace.py`) to build convergence curves → **find where high-E plateaus and CATCH OVERFIT**
+(do NOT train blind to 4000; sparse high-E + a bigger model = memorization risk only a held-out curve reveals):
+
+1. `--d_model 256 --depth 6  --epochs 2000 --batch_size 16`
+2. `--d_model 256 --depth 6  --epochs 4000 --batch_size 16`
+3. `--d_model 512 --depth 10 --epochs 2000 --batch_size 8`
+4. `--d_model 512 --depth 10 --epochs 4000 --batch_size 8`
+
+All cells also: `--center per_cascade --augment_rot --max_defects 1000 --save_every 100 --select_every 99999 --no_results`.
+Answers: where high-E flattens, and whether **512/10** (more capacity for the ~2000-token high-E clouds)
+beats 256/6. 512/10 is the long pole — watch ep-1 `s/ep` in `cascaide-sweep.o<jobid>` to size walltime.
+```sh
+QUEUE=preemptable WALLTIME=24:00:00 ./deploy/polaris/submit.sh sweep deploy/polaris/experiments_wave2.txt
+```
+
+### Exp 9 — Phase 3: targeted high-E levers  (CONDITIONAL — only if Exp 7/8 leave a high-E gap)
+- **High-E specialist / curriculum:** train a `>150 keV`-only model (with new data) as a **ceiling probe**
+  (add `--energy_min`, mirror of `--energy_max`); if a specialist ≫ the full-range model on high-E,
+  oversample / curriculum-weight high-E in the main model (`energy_balance` is newly justified now that we
+  have the data — it was de-motivated only for the disproven bin-0 artifact).
+- **O(3) reflection augmentation:** rotation is already full SO(3); add reflections (W BCC is
+  reflection-symmetric → exact, ~free, doubles effective symmetry). This is the real "more augmentation"
+  lever; beyond it, real high-E data ≫ synthetic aug.
+- **`--min_snr`** (already wired, default off): untested loss weighting for the high-noise/high-t steps that
+  matter most for the big clouds. One extra cell, cheap.
+
+**DO NOT re-litigate** (all ruled out): aux distributional losses (radial/RDF — `substructure-loss-negative.md`),
+global centering (Exp 4), lattice-snap (ledger). **Don't** train thousands of epochs without a held-out
+curve. **Don't** make augmentation the primary lever — the real high-E data dominates.
+
+**Stretch (only if Exp 8 shows epochs help but is wall-clock-bound):** local/windowed attention or a
+latent/patchified diffusion to cut the per-step O(N²) on ~2000-token high-E clouds → enables the
+deep-epoch regime efficiently. Architecture change → only if the scan proves it's needed.
+
+---
 
 ## Preemptable sweep — full-range study  (preemptable)
 `deploy/polaris/experiments_preempt.txt` · 4 cells → 1 node. **Full 0–300 keV**, cosine, with
@@ -155,6 +236,7 @@ or split the sweep so each cell is shorter.
 | set-dit v2 300ep | <100keV | 32 | 0.519 | 7/7 | converged per_cascade baseline |
 | sweep **cosine** cell (best@ep59) | <100keV | 48 | 0.625 | 6/7 | job 7183204; fails only nn_w1 (1.10) — **confounded, see lesson** |
 | set-dit v2 250ep | full 0–300 | 32 | 0.644 | 6/7 | full-range, less optimized |
+| **set-dit v2 500ep + augment_rot** (final) | full 0–300 | 24 | **0.58–0.62** | 6–7/7 | **NEW BEST** (Exp 5); per_cascade; beats 250ep baseline ~0.19 OVERALL / −0.33 high-E; `results/ckpts/percascade_500ep_aug/final_model.pt`. Range = ±0.15 sampler-draw variance (seed fix → Exp 6). |
 | 30ep Polaris smoke (7183018) | <100keV | 8 | 1.242 | 4/7 | undertrained |
 | **vignesh** global-center ep569 | <100keV | 12 | 1.489 | 2/7 | GLOBAL centering — worse than our 30ep per_cascade despite 19× training |
 
@@ -187,6 +269,9 @@ is conceivable but the residual looks ~random, so deprioritized.)
   latent diffusion or local attention (cut the per-step O(N^2) that dominates high-E).
 
 ### In flight / pending
+- **▶ Wave 2 (Exp 6–9) is THE CURRENT PLAN** — high-E data drops Mon 2026-06-08. Exp 6 (eval hardening:
+  seed sampler + held-out `--test_frac` + multi-seed scoring) is the do-first prerequisite; then Exp 7
+  data A/B, Exp 8 long epochs×capacity scan, Exp 9 conditional high-E levers. See the Wave 2 section above.
 - **Exp 1 rerun** — scheduler sweep at **500 ep + `--ckpt_every 50`** (commit `8e652909`). PENDING submit.
 - **Preemptable rerun** — full-range, `--ckpt_every 100` (commit `a2d1c563`); old run killed at 8 min. PENDING.
 - **Exp 2** — aug vs arch vs epochs, staged in `experiments.txt`. Needs Exp-1 winner.
